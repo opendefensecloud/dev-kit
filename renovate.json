@@ -1,0 +1,17 @@
+{
+  "extends": [
+    "config:recommended"
+  ],
+  "regexManagers": [
+    {
+      "fileMatch": [
+        "^tools\\.lock$"
+      ],
+      "matchStrings": [
+        "(?<depName>[^\\s]+) (?<currentValue>[^@]+@v?[^\\s]+)"
+      ],
+      "datasourceTemplate": "go",
+      "versioningTemplate": "semver"
+    }
+  ]
+}
