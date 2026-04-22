@@ -1,17 +1,20 @@
 {
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended"
   ],
-  "regexManagers": [
+  "customManagers": [
     {
-      "fileMatch": [
-        "^tools\\.lock$"
+      "customType": "regex",
+      "managerFilePatterns": [
+        "tools.lock"
       ],
       "matchStrings": [
         "(?<depName>[^\\s]+) (?<currentValue>[^@]+@v?[^\\s]+)"
       ],
-      "datasourceTemplate": "go",
+      "depNameTemplate": "go",
       "versioningTemplate": "semver"
     }
-  ]
+  ],
+  "ignorePaths": []
 }

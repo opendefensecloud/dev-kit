@@ -14,71 +14,75 @@
       url = "github:purpleclay/go-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.git-hooks.follows = "git-hooks";
+      inputs.flake-utils.follows = "flake-utils";
     };
 
     gomod2nix = {
       url = "github:nix-community/gomod2nix";
       inputs.nixpkgs.follows = "nixpkgs";
+      inputs.flake-utils.follows = "flake-utils";
     };
   };
 
-  outputs = { nixpkgs, flake-utils, ... }@inputs:
-    flake-utils.lib.eachDefaultSystem (system: let
+  outputs = { nixpkgs, git-hooks, go-overlay, gomod2nix, ... }@inputs: {
+    lib.mkShell = { system, packages ? [], preCommitHooks ? {}, goVersion ? null, ... }:
+    let
       pkgs = import nixpkgs {
         inherit system;
         overlays = [
-          inputs.go-overlay.overlays.default
-          inputs.gomod2nix.overlays.default
+          go-overlay.overlays.default
+          gomod2nix.overlays.default
         ];
       };
+      lib = pkgs.lib;
+      mkDefaultAttrs = value:
+        if lib.isAttrs value then
+          lib.mkDefault (builtins.mapAttrs (_: v: mkDefaultAttrs v) value)
+        else
+          lib.mkDefault value;
 
-      goVersion = "1.26.2";
-      go = pkgs.go-bin.versions.${goVersion};
+      defaultPkgs = with pkgs; [
+        curl
+        gnumake
+        jq
+        kind
+        kubectl
+        kubernetes-helm
+        shellcheck
+        yq-go
+      ];
 
-      pre-commit-check = inputs.git-hooks.lib.${system}.run {
-        src = ./.;
-        hooks = {
-          gofmt.enable = true;
-
-          fmt = {
-            enable = true;
-            entry = "make fmt";
-            pass_filenames = false;
-          };
-
-          lint = {
-            enable = true;
-            entry = "make lint";
-            pass_filenames = false;
-          };
-
-          osv-scanner = {
-            enable = true;
-            entry = "make scan";
-            files = "\\.(mod|sum)$|requirements\\.txt$";
-            pass_filenames = false;
-          };
+      defaultHooks = {
+        fmt = mkDefaultAttrs {
+          enable = true;
+          entry = "make fmt";
+          pass_filenames = false;
+        };
+        lint = mkDefaultAttrs {
+          enable = true;
+          entry = "make lint";
+          pass_filenames = false;
+        };
+        osv-scanner = mkDefaultAttrs {
+          enable = true;
+          entry = "make scan";
+          files = "\\.(mod|sum)$|requirements\\.txt$";
+          pass_filenames = false;
         };
       };
-    in {
-      devShells.default = pkgs.mkShell {
-        inherit (pre-commit-check) shellHook;
-        packages = with pkgs; [
-          curl
-          fluxcd
-          gnumake
-          go
-          gotools
-          jq
-          kind
-          kubectl
-          kubernetes-helm
-          shellcheck
-          yq-go
+      gitHooks = git-hooks.lib.${system}.run {
+        src = nixpkgs.path;
+        hooks = defaultHooks // preCommitHooks;
+      };
+    in
+      pkgs.mkShell {
+        shellHook = gitHooks.shellHook + ''
+          [[ -f .git/hooks/pre-commit.legacy ]] && rm -v .git/hooks/pre-commit.legacy
+        '';
+
+        packages = defaultPkgs ++ packages ++ lib.optionals (goVersion != null) [
+          pkgs.go-bin.versions.${goVersion}
         ];
       };
-
-      checks.pre-commit-check = pre-commit-check;
-    }
-  );
+  };
 }
