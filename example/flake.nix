@@ -10,7 +10,7 @@
     };
 
     dev-kit = {
-      url = "github:opendefensecloud/dev-kit?ref=22f3c2286cd2ca0a591d7ff66b7406e14d28e8f4";
+      url = "github:opendefensecloud/dev-kit";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.go-overlay.follows = "go-overlay";
     };
