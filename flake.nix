@@ -1,5 +1,5 @@
 {
-  description = "odc development environment";
+  description = "dev-kit";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
