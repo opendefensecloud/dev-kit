@@ -17,10 +17,30 @@ LOCALGOBIN := $(LOCALBIN)/go
 $(LOCALGOBIN): $(LOCALBIN)
 	mkdir -p $(LOCALGOBIN)
 
-OS := $(shell go env GOOS)
-ARCH := $(shell go env GOARCH)
-
+# Binaries provided by flake.nix
+FLUX ?= flux
 GO ?= go
+HELM ?= helm
+JQ ?= jq
+KIND ?= kind
+KUBECTL ?= kubectl
+SHELLCHECK ?= shellcheck
+YQ ?= yq
+
+OS := $(shell $(GO) env GOOS)
+ARCH := $(shell $(GO) env GOARCH)
+
+# Binaries provided by go install / tools.lock
+ADDLICENSE ?= $(LOCALGOBIN)/addlicense
+CONTROLLER_GEN ?= $(LOCALGOBIN)/controller-gen
+CRD_REF_DOCS ?= $(LOCALGOBIN)/crd-ref-docs
+GINKGO ?= $(LOCALGOBIN)/ginkgo
+GOLANGCI_LINT ?= $(LOCALGOBIN)/golangci-lint
+HELM_DOCS ?= $(LOCALGOBIN)/helm-docs
+OPENAPI_GEN ?= $(LOCALGOBIN)/openapi-gen
+OPENAPI_GEN ?= $(LOCALGOBIN)/openapi-gen
+OSV_SCANNER ?= $(LOCALGOBIN)/osv-scanner
+SETUP_ENVTEST ?= $(LOCALGOBIN)/setup-envtest
 
 ##@ General
 
@@ -50,19 +70,17 @@ mod: ## Do go mod tidy, download, verify
 	@$(GO) mod verify
 
 ## Common linting tasks
-GOLANGCI_LINT := $(LOCALGOBIN)/golangci-lint
 .PHONY: golangci-lint
-golangci-lint: $(GOLANGCI_LINT)
-	$(GOLANGCI_LINT) run -v .
+golangci-lint: $(GOLANGCI_LINT) ## run golangci-lint
+	$(GOLANGCI_LINT) run -v
 
 .PHONY: shellcheck
-shellcheck:
-	shellcheck $$(find -name *.sh)
+shellcheck:  ## run shellcheck
+	$(SHELLCHECK) $$(git ls-files | grep '.*.sh$$')
 
-OSV_SCANNER := $(LOCALGOBIN)/osv-scanner
 OSV_SCANNER_CONFIG ?= ./.osv-scanner.toml
 .PHONY: scan
-scan: $(OSV_SCANNER)
+scan: $(OSV_SCANNER)  ## scan for vulnerabilities
 	$(OSV_SCANNER) scan --config $(OSV_SCANNER_CONFIG) -r .
 
 # Local dev environment
