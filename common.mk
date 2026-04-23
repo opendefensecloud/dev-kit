@@ -17,10 +17,7 @@ LOCALGOBIN := $(LOCALBIN)/go
 $(LOCALGOBIN): $(LOCALBIN)
 	mkdir -p $(LOCALGOBIN)
 
-OS := $(shell $(GO) env GOOS)
-ARCH := $(shell $(GO) env GOARCH)
-
-# Binaries from flake.nix
+# Binaries provided by flake.nix
 FLUX ?= flux
 GO ?= go
 HELM ?= helm
@@ -30,7 +27,10 @@ KUBECTL ?= kubectl
 SHELLCHECK ?= shellcheck
 YQ ?= yq
 
-# Binaries from go install
+OS := $(shell $(GO) env GOOS)
+ARCH := $(shell $(GO) env GOARCH)
+
+# Binaries provided by go install / tools.lock
 ADDLICENSE ?= $(LOCALGOBIN)/addlicense
 CONTROLLER_GEN ?= $(LOCALGOBIN)/controller-gen
 CRD_REF_DOCS ?= $(LOCALGOBIN)/crd-ref-docs
@@ -71,16 +71,16 @@ mod: ## Do go mod tidy, download, verify
 
 ## Common linting tasks
 .PHONY: golangci-lint
-golangci-lint: $(GOLANGCI_LINT)
+golangci-lint: $(GOLANGCI_LINT) ## run golangci-lint
 	$(GOLANGCI_LINT) run -v
 
 .PHONY: shellcheck
-shellcheck:
+shellcheck:  ## run shellcheck
 	$(SHELLCHECK) $$(git ls-files | grep '.*.sh$$')
 
 OSV_SCANNER_CONFIG ?= ./.osv-scanner.toml
 .PHONY: scan
-scan: $(OSV_SCANNER)
+scan: $(OSV_SCANNER)  ## scan for vulnerabilities
 	$(OSV_SCANNER) scan --config $(OSV_SCANNER_CONFIG) -r .
 
 # Local dev environment
