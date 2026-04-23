@@ -3,16 +3,19 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
 
     go-overlay = {
       url = "github:purpleclay/go-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
+      inputs.flake-utils.follows = "flake-utils";
     };
 
     dev-kit = {
       url = "github:opendefensecloud/dev-kit";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.go-overlay.follows = "go-overlay";
+      inputs.flake-utils.follows = "flake-utils";
     };
   };
 
