@@ -10,10 +10,10 @@
         "tools.lock"
       ],
       "matchStrings": [
-        "(?<depName>[^\\s]+) (?<currentValue>[^@]+@v?[^\\s]+)"
+        "(?<depName>[^\\s]+) (?<packageName>[^@]+)@(?<currentValue>v?[^\\s]+)"
       ],
-      "depNameTemplate": "go",
-      "versioningTemplate": "semver"
+      "versioningTemplate": "semver",
+      "datasourceTemplate": "go"
     }
   ],
   "ignorePaths": []
