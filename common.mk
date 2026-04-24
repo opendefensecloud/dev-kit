@@ -39,6 +39,7 @@ CRD_REF_DOCS ?= $(LOCALGOBIN)/crd-ref-docs
 GINKGO ?= $(LOCALGOBIN)/ginkgo
 GOLANGCI_LINT ?= $(LOCALGOBIN)/golangci-lint
 HELM_DOCS ?= $(LOCALGOBIN)/helm-docs
+OCM ?= $(LOCALGOBIN)/ocm
 OPENAPI_GEN ?= $(LOCALGOBIN)/openapi-gen
 OPENAPI_GEN ?= $(LOCALGOBIN)/openapi-gen
 OSV_SCANNER ?= $(LOCALGOBIN)/osv-scanner
@@ -110,3 +111,10 @@ $(LOCALGOBIN)/%: $(LOCALGOBIN) $(TOOL_LOCK)
 	version=$$(cut -d@ -f2 <<< $$module); \
 	test -s $(LOCALGOBIN)/$$toolname && grep -q "$$version" $(LOCALGOBIN)/.$$toolname-version 2>/dev/null || \
 		(GOBIN=$(LOCALGOBIN) $(GO) install $$module && echo $$version > $(LOCALGOBIN)/.$$toolname-version)
+
+# ocm cli (sdk v1) cannot be installed with go install because of replace directives in go.mod
+$(LOCALGOBIN)/ocm: $(LOCALGOBIN) $(TOOL_LOCK)
+	module=$$(awk "/^ocm / {print \$$2}" $(TOOL_LOCK)); \
+	version=$$(cut -d@ -f2 <<< $$module); \
+	test -s $@ && grep -q "$$version" $(LOCALGOBIN)/.ocm-version 2>/dev/null || \
+	curl -s https://ocm.software/install.sh | VERSION_OCM=$$version bash -s -- $(LOCALGOBIN) && echo $$version > $(LOCALGOBIN)/.ocm-version
