@@ -27,8 +27,10 @@ KUBECTL ?= kubectl
 SHELLCHECK ?= shellcheck
 YQ ?= yq
 
-OS := $(shell $(GO) env GOOS)
-ARCH := $(shell $(GO) env GOARCH)
+OS := $(or $(shell $(GO) env GOOS 2>/dev/null), \
+	$(shell uname -s | tr '[:upper:]' '[:lower:]'))
+ARCH := $(or $(shell $(GO) env GOARCH 2>/dev/null), \
+	$(shell uname -m | sed -E 's/x86_64/amd64/;s/i386|i686/386/;s/aarch64|arm64/arm64/;s/armv7l/arm/'))
 
 # Binaries provided by go install / tools.lock
 ADDLICENSE ?= $(LOCALGOBIN)/addlicense
