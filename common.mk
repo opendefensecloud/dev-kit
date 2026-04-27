@@ -1,4 +1,3 @@
-
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
 SHELL = /usr/bin/env bash -o pipefail
@@ -66,20 +65,9 @@ help: ## Display this help.
 clean:
 	rm -rf $(LOCALBIN)
 
-.PHONY: mod
-mod: ## Do go mod tidy, download, verify
-	@$(GO) mod tidy
-	@$(GO) mod download
-	@$(GO) mod verify
-
-## Common linting tasks
-.PHONY: golangci-lint
-golangci-lint: $(GOLANGCI_LINT) ## run golangci-lint
-	$(GOLANGCI_LINT) run -v
-
 .PHONY: shellcheck
 shellcheck:  ## run shellcheck
-	$(SHELLCHECK) $$(git ls-files | grep '.*.sh$$')
+	$(SHELLCHECK) $$(git ls-files '*\.sh')
 
 OSV_SCANNER_CONFIG ?= ./.osv-scanner.toml
 .PHONY: scan
@@ -101,6 +89,17 @@ setup-local-cluster: ## Set up a Kind cluster for local development if it does n
 			$(KIND) create cluster --name $(KIND_CLUSTER) ;; \
 	esac
 
+##@ Common golang targets
+.PHONY: mod
+mod: ## run go mod tidy, download, verify
+	@$(GO) mod tidy
+	@$(GO) mod download
+	@$(GO) mod verify
+
+.PHONY: golangci-lint
+golangci-lint: $(GOLANGCI_LINT) ## run golangci-lint
+	$(GOLANGCI_LINT) run -v
+
 # Install local tools
 TOOL_LOCK := $(BUILD_PATH)/tools.lock
 
@@ -114,7 +113,7 @@ $(LOCALGOBIN)/%: $(LOCALGOBIN) $(TOOL_LOCK)
 
 # ocm cli (sdk v1) cannot be installed with go install because of replace directives in go.mod
 $(LOCALGOBIN)/ocm: $(LOCALGOBIN) $(TOOL_LOCK)
-	module=$$(awk "/^ocm / {print \$$2}" $(TOOL_LOCK)); \
+	@module=$$(awk "/^ocm / {print \$$2}" $(TOOL_LOCK)); \
 	version=$$(cut -d@ -f2 <<< $$module); \
 	test -s $@ && grep -q "$$version" $(LOCALGOBIN)/.ocm-version 2>/dev/null || \
 	curl -s https://ocm.software/install.sh | VERSION_OCM=$$version bash -s -- $(LOCALGOBIN) && echo $$version > $(LOCALGOBIN)/.ocm-version
