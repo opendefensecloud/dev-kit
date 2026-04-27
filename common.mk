@@ -74,6 +74,11 @@ OSV_SCANNER_CONFIG ?= ./.osv-scanner.toml
 scan: $(OSV_SCANNER)  ## scan for vulnerabilities
 	$(OSV_SCANNER) scan --config $(OSV_SCANNER_CONFIG) -r .
 
+.PHONY: addlicense
+addlicense: $(ADDLICENSE)  ## Add License headers containing of `license` and `comment` to files matched by `pattern`.
+	@test -n "$(license)" && test -n "$(comment)" && test -n "$(pattern)" \
+		git ls-files '$(pattern)' | xargs -r $(ADDLICENSE) -c '$(comment)' -l '$(license)' -s=only
+
 # Local dev environment
 .PHONY: setup-local-cluster
 setup-local-cluster: ## Set up a Kind cluster for local development if it does not exist
