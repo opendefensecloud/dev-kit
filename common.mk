@@ -76,8 +76,12 @@ scan: $(OSV_SCANNER)  ## scan for vulnerabilities
 
 .PHONY: addlicense
 addlicense: $(ADDLICENSE)  ## Add License headers containing of `license` and `comment` to files matched by `pattern`.
-	@test -n "$(license)" && test -n "$(comment)" && test -n "$(pattern)" \
-		git ls-files '$(pattern)' | xargs -r $(ADDLICENSE) -c '$(comment)' -l '$(license)' -s=only
+	@test -n "$(license)" && test -n "$(comment)" && test -n "$(pattern)" && \
+		git ls-files '$(pattern)' | xargs -r $(ADDLICENSE) -c '$(comment)' -l '$(license)' -s=only $(extraargs)
+
+.PHONY: addlicense-check
+addlicense-check:
+	$(MAKE) addlicense extraargs='-check'
 
 # Local dev environment
 .PHONY: setup-local-cluster
