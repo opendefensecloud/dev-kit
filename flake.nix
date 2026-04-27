@@ -25,7 +25,7 @@
   };
 
   outputs = { nixpkgs, git-hooks, go-overlay, gomod2nix, ... }@inputs: {
-    lib.mkShell = { system, packages ? [], preCommitHooks ? {}, goVersion ? null, ... }:
+    lib.mkShell = { system, packages ? [], preCommitHooks ? {}, goVersion ? null, shellHook ? "", ... }:
     let
       pkgs = import nixpkgs {
         inherit system;
@@ -78,7 +78,7 @@
       pkgs.mkShell {
         shellHook = gitHooks.shellHook + ''
           [[ -f .git/hooks/pre-commit.legacy ]] && rm -v .git/hooks/pre-commit.legacy
-        '';
+        '' + shellHook;
 
         packages = defaultPkgs ++ packages ++ lib.optionals (goVersion != null) [
           pkgs.go-bin.versions.${goVersion}
