@@ -78,7 +78,7 @@
       };
       gitHooks = git-hooks.lib.${system}.run {
         src = nixpkgs.path;
-        hooks = defaultHooks // preCommitHooks;
+        hooks = lib.recursiveUpdate defaultHooks preCommitHooks;
       };
     in
       pkgs.mkShell {
