@@ -25,7 +25,7 @@
   };
 
   outputs = { nixpkgs, git-hooks, go-overlay, gomod2nix, ... }@inputs: {
-    lib.mkShell = { system, packages ? [], preCommitHooks ? {}, goVersion ? null, shellHook ? "", ... }:
+    lib.mkShell = { system, packages ? [], preCommitHooks ? {}, goVersion ? null, shellHook ? "", localOverridesPath ? ./flake.local.nix, ... }:
     let
       pkgs = import nixpkgs {
         inherit system;
@@ -40,6 +40,10 @@
           lib.mkDefault (builtins.mapAttrs (_: v: mkDefaultAttrs v) value)
         else
           lib.mkDefault value;
+
+      localOverrides = if builtins.pathExists localOverridesPath
+        then import localOverridesPath
+        else {};
 
       defaultPkgs = with pkgs; [
         curl
@@ -84,6 +88,6 @@
           pkgs.go-bin.versions.${goVersion}
           pkgs.gotools
         ];
-      };
+      } // localOverrides;
   };
 }
