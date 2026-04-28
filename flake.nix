@@ -82,6 +82,7 @@
 
         packages = defaultPkgs ++ packages ++ lib.optionals (goVersion != null) [
           pkgs.go-bin.versions.${goVersion}
+          pkgs.gotools
         ];
       };
   };
