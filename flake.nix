@@ -69,6 +69,12 @@
           files = "\\.(mod|sum)$|requirements\\.txt$";
           pass_filenames = false;
         };
+        commitlint = mkDefaultAttrs {
+          enable = false;
+          entry = "${pkgs.commitlint}/bin/commitlint --edit";
+          stages = ["commit-msg"];
+          pass_filenames = false;
+        };
       };
       gitHooks = git-hooks.lib.${system}.run {
         src = nixpkgs.path;

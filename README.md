@@ -87,6 +87,39 @@ cobra: $(COBRA)
 	$(COBRA) help
 ```
 
+### Default git hooks
+
+The dev shell installs the following git hooks automatically:
+
+| Hook         | Stage        | Description                                     |
+| ---          | ---          | ---                                             |
+| `fmt`        | `pre-commit` | Runs `make fmt`                                 |
+| `lint`       | `pre-commit` | Runs `make lint`                                |
+| `osv-scanner`| `pre-commit` | Runs `make scan` on dependency file changes     |
+| `commitlint` | `commit-msg` | Validates commit messages against [Conventional Commits](https://www.conventionalcommits.org/) (disabled by default) |
+
+To enable the `commitlint` hook, set `commitlint.enable = true` in `preCommitHooks` and add a `.commitlintrc.yml` to the project root:
+
+```yaml
+extends:
+  - "@commitlint/config-conventional"
+rules:
+  type-enum:
+    - 2
+    - always
+    - - feat
+      - fix
+      - docs
+      - chore
+      - refactor
+      - test
+      - ci
+      - perf
+      - revert
+```
+
+All default hooks can be disabled per-project via `preCommitHooks` (see below).
+
 ### Customizing the dev shell
 
 Modify `flake.nix` to adjust Go version, packages, and pre-commit hooks:
