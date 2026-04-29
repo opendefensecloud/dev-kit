@@ -26,6 +26,7 @@ The included `common.mk` provides:
 | `shellcheck`          | Run shellcheck on shell scripts             |
 | `scan`                | Scan for vulnerabilities using osv-scanner  |
 | `setup-local-cluster` | Create a Kind cluster for local development |
+| `repo-settings`       | Reconcile GitHub repository settings         |
 
 ### Variables
 
@@ -86,6 +87,17 @@ COBRA := $(LOCALGOBIN)/cobra-cli
 cobra: $(COBRA)
 	$(COBRA) help
 ```
+
+### Repository settings
+
+Run `make repo-settings` to reconcile your GitHub repository with the organization's standard configuration. This target is idempotent and requires the `gh` CLI to be authenticated.
+
+It configures:
+
+- **Labels** — creates/updates the standard set of issue and PR labels
+- **Merge strategy** — merge commits only (no squash or rebase), auto-merge enabled, delete branch on merge
+- **Secret scanning** — enabled
+- **Branch protection** — a "protect-main" ruleset on the default branch: requires PRs with 1 approval, dismisses stale reviews, requires review thread resolution, enforces commit signatures, prevents direct pushes/deletions/non-fast-forwards (org admins can bypass)
 
 ### Default git hooks
 
