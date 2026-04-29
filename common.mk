@@ -26,6 +26,9 @@ KUBECTL ?= kubectl
 SHELLCHECK ?= shellcheck
 YQ ?= yq
 
+# External prerequisites (not managed by flake.nix or tools.lock)
+GH ?= gh
+
 OS := $(or $(shell $(GO) env GOOS 2>/dev/null), \
 	$(shell uname -s | tr '[:upper:]' '[:lower:]'))
 ARCH := $(or $(shell $(GO) env GOARCH 2>/dev/null), \
@@ -96,17 +99,17 @@ REPO_RULESET := { \
 
 .PHONY: repo-settings
 repo-settings: ## Reconcile GitHub repository settings (labels, merge strategy, branch protection, security)
-	@REPO=$$(gh repo view --json nameWithOwner -q .nameWithOwner) || { echo "error: not a GitHub repository or gh not authenticated"; exit 1; }; \
+	@REPO=$$($(GH) repo view --json nameWithOwner -q .nameWithOwner) || { echo "error: not a GitHub repository or gh not authenticated"; exit 1; }; \
 	echo "Reconciling settings for $$REPO..."; \
 	\
 	echo "  Syncing labels..."; \
 	echo "$$REPO_LABELS" | while IFS=';' read -r name color desc; do \
 		[ -z "$$name" ] && continue; \
-		gh label create "$$name" --repo "$$REPO" --color "$$color" --description "$$desc" --force 2>/dev/null; \
+		$(GH) label create "$$name" --repo "$$REPO" --color "$$color" --description "$$desc" --force 2>/dev/null; \
 	done; \
 	\
 	echo "  Configuring merge strategy..."; \
-	gh api "repos/$$REPO" -X PATCH \
+	$(GH) api "repos/$$REPO" -X PATCH \
 		-f allow_merge_commit=true \
 		-f allow_squash_merge=false \
 		-f allow_rebase_merge=false \
@@ -114,16 +117,16 @@ repo-settings: ## Reconcile GitHub repository settings (labels, merge strategy, 
 		-f allow_auto_merge=true > /dev/null; \
 	\
 	echo "  Enabling secret scanning..."; \
-	gh api "repos/$$REPO" -X PATCH \
+	$(GH) api "repos/$$REPO" -X PATCH \
 		--input <(echo '{"security_and_analysis":{"secret_scanning":{"status":"enabled"}}}') > /dev/null; \
 	\
 	echo "  Configuring branch protection ruleset..."; \
-	existing=$$(gh api "repos/$$REPO/rulesets" -q '.[] | select(.name=="protect-main") | .id' 2>/dev/null); \
+	existing=$$($(GH) api "repos/$$REPO/rulesets" -q '.[] | select(.name=="protect-main") | .id' 2>/dev/null); \
 	if [ -n "$$existing" ]; then \
-		gh api "repos/$$REPO/rulesets/$$existing" -X PUT --input <(echo '$(REPO_RULESET)') > /dev/null; \
+		$(GH) api "repos/$$REPO/rulesets/$$existing" -X PUT --input <(echo '$(REPO_RULESET)') > /dev/null; \
 		echo "    Updated existing ruleset (id: $$existing)"; \
 	else \
-		gh api "repos/$$REPO/rulesets" -X POST --input <(echo '$(REPO_RULESET)') > /dev/null; \
+		$(GH) api "repos/$$REPO/rulesets" -X POST --input <(echo '$(REPO_RULESET)') > /dev/null; \
 		echo "    Created new ruleset"; \
 	fi; \
 	\
