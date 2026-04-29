@@ -37,7 +37,7 @@
       lib = pkgs.lib;
       mkDefaultAttrs = value:
         if lib.isAttrs value then
-          lib.mkDefault (builtins.mapAttrs (_: v: mkDefaultAttrs v) value)
+          builtins.mapAttrs (_: v: mkDefaultAttrs v) value
         else
           lib.mkDefault value;
 
