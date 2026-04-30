@@ -1,3 +1,4 @@
 .direnv
 example/common.mk
 example/bin/
+.pre-commit-config.yaml
