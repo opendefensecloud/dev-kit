@@ -24,7 +24,7 @@
     };
   };
 
-  outputs = { nixpkgs, git-hooks, go-overlay, gomod2nix, ... }@inputs: {
+  outputs = { self, nixpkgs, flake-utils, git-hooks, go-overlay, gomod2nix, ... }@inputs: {
     lib.mkShell = { system, packages ? [], preCommitHooks ? {}, goVersion ? null, shellHook ? "", ... }:
     let
       pkgs = import nixpkgs {
@@ -91,5 +91,15 @@
           pkgs.gotools
         ];
       };
-  };
+  } // flake-utils.lib.eachDefaultSystem (system: {
+    devShells.default = self.lib.mkShell {
+      inherit system;
+      preCommitHooks = {
+        fmt.enable = false;
+        lint.enable = false;
+        osv-scanner.enable = false;
+        commitlint.enable = true;
+      };
+    };
+  });
 }
