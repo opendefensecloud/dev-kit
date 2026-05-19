@@ -99,7 +99,8 @@ REPO_RULESET := { \
 
 .PHONY: repo-settings
 repo-settings: ## Reconcile GitHub repository settings (labels, merge strategy, branch protection, security)
-	@REPO=$$($(GH) repo view --json nameWithOwner -q .nameWithOwner) || { echo "error: not a GitHub repository or gh not authenticated"; exit 1; }; \
+	@$(GH) auth status >/dev/null 2>&1 || { echo "error: gh is not authenticated; run 'gh auth login'"; exit 1; }; \
+	REPO=$$($(GH) repo view --json nameWithOwner -q .nameWithOwner) || { echo "error: not a GitHub repository"; exit 1; }; \
 	echo "Reconciling settings for $$REPO..."; \
 	\
 	echo "  Syncing labels..."; \
@@ -130,7 +131,43 @@ repo-settings: ## Reconcile GitHub repository settings (labels, merge strategy, 
 		echo "    Created new ruleset"; \
 	fi; \
 	\
+	echo "  Installing update-action-pins workflow..."; \
+	mkdir -p .github/workflows; \
+	printf '%s\n' \
+		'name: Update Action Pins' \
+		'' \
+		'on:' \
+		'  pull_request:' \
+		'    paths:' \
+		'      - ".github/workflows/**"' \
+		'' \
+		'jobs:' \
+		'  check-pins:' \
+		'    name: Check action pins' \
+		'    runs-on: ubuntu-latest' \
+		'    steps:' \
+		'      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4' \
+		'      - name: Verify all actions are pinned to a SHA' \
+		'        run: |' \
+		'          unpinned=$$(grep -rE ''^\s+(- )?uses: '' .github/workflows/ \' \
+		'            | grep -vE ''^\s+(- )?uses: \.\/'' \' \
+		'            | grep -vE ''@[0-9a-f]{40}($$|\s)'' || true)' \
+		'          if [[ -n "$$unpinned" ]]; then' \
+		'            echo "::error::Found unpinned GitHub Actions (must use SHA digest, not tag):"' \
+		'            echo "$$unpinned"' \
+		'            echo ""' \
+		'            echo "Run '"'"'GITHUB_TOKEN=$$(gh auth token) update-action-pins .github/workflows/'"'"' to fix."' \
+		'            exit 1' \
+		'          fi' \
+		> .github/workflows/update-action-pins.yml; \
+	echo "    Wrote .github/workflows/update-action-pins.yml"; \
+	\
 	echo "Done."
+
+.PHONY: update-action-pins
+update-action-pins: ## Update GitHub Action pins to their latest commit SHA
+	@$(GH) auth status >/dev/null 2>&1 || { echo "error: gh is not authenticated; run 'gh auth login'"; exit 1; }; \
+	GITHUB_TOKEN=$$(gh auth token) update-action-pins .github/workflows/
 
 ##@ General
 
