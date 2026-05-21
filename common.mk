@@ -252,6 +252,7 @@ DEV_KIT_VERSION ?= main
 # Make's include-file-remake mechanism triggers the project's common.mk: rule on
 # its next restart — picking up the pre-downloaded .common.mk-download file.
 _COMMON_MK_SELF_UPDATE := $(shell \
+  hash_cmd=$$(command -v sha256sum >/dev/null 2>&1 && echo "sha256sum" || echo "shasum -a 256"); \
   stored=$$(cat .common.mk-version 2>/dev/null); \
   if [ "$$stored" != "$(DEV_KIT_VERSION)" ]; then \
     rm -f .common.mk-checked .common.mk-download; \
@@ -261,8 +262,8 @@ _COMMON_MK_SELF_UPDATE := $(shell \
   if curl --fail -sSL \
       'https://raw.githubusercontent.com/opendefensecloud/dev-kit/$(DEV_KIT_VERSION)/common.mk' \
       -o .common.mk-download 2>/dev/null; then \
-    remote=$$(sha256sum .common.mk-download | cut -d' ' -f1); \
-    local_hash=$$(sha256sum '$(_COMMON_MK_PATH)' 2>/dev/null | cut -d' ' -f1); \
+    remote=$$($$hash_cmd .common.mk-download | cut -d' ' -f1); \
+    local_hash=$$($$hash_cmd '$(_COMMON_MK_PATH)' 2>/dev/null | cut -d' ' -f1); \
 	printf '%s' '$(DEV_KIT_VERSION)' > .common.mk-version; \
     if [ "$$remote" = "$$local_hash" ]; then \
       rm -f .common.mk-download; \
