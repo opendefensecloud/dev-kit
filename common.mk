@@ -99,7 +99,8 @@ REPO_RULESET := { \
 
 .PHONY: repo-settings
 repo-settings: ## Reconcile GitHub repository settings (labels, merge strategy, branch protection, security)
-	@REPO=$$($(GH) repo view --json nameWithOwner -q .nameWithOwner) || { echo "error: not a GitHub repository or gh not authenticated"; exit 1; }; \
+	@$(GH) auth status >/dev/null 2>&1 || { echo "error: gh is not authenticated; run 'gh auth login'"; exit 1; }; \
+	REPO=$$($(GH) repo view --json nameWithOwner -q .nameWithOwner) || { echo "error: not a GitHub repository"; exit 1; }; \
 	echo "Reconciling settings for $$REPO..."; \
 	\
 	echo "  Syncing labels..."; \
@@ -130,7 +131,20 @@ repo-settings: ## Reconcile GitHub repository settings (labels, merge strategy, 
 		echo "    Created new ruleset"; \
 	fi; \
 	\
+	echo "  Installing update-action-pins workflow..."; \
+	mkdir -p .github/workflows; \
+	_dev_kit_ver=$${DEV_KIT_VERSION:-main}; \
+	curl --fail -sSL \
+		"https://raw.githubusercontent.com/opendefensecloud/dev-kit/$$_dev_kit_ver/.github/workflows/update-action-pins.yml" \
+		-o .github/workflows/update-action-pins.yml; \
+	echo "    Wrote .github/workflows/update-action-pins.yml"; \
+	\
 	echo "Done."
+
+.PHONY: update-action-pins
+update-action-pins: ## Update GitHub Action pins to their latest commit SHA
+	@$(GH) auth status >/dev/null 2>&1 || { echo "error: gh is not authenticated; run 'gh auth login'"; exit 1; }; \
+	GITHUB_TOKEN=$$(gh auth token) update-action-pins .github/workflows/
 
 ##@ General
 
