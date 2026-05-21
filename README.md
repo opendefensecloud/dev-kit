@@ -48,7 +48,12 @@ To include `common.mk` into your own `Makefile` use this snippet or copy the pro
 DEV_KIT_VERSION := v1.0.0
 -include common.mk
 common.mk:
-	curl -sSL https://raw.githubusercontent.com/opendefensecloud/dev-kit/$(DEV_KIT_VERSION)/common.mk -o $@
+  @[ -f .common.mk-download ] || \
+		curl --fail -sSL https://raw.githubusercontent.com/opendefensecloud/dev-kit/$(DEV_KIT_VERSION)/common.mk \
+		  -o .common.mk-download
+	mv .common.mk-download $@
+	printf '%s' '$(DEV_KIT_VERSION)' > .common.mk-version
+	touch .common.mk-checked
 ```
 
 Add your own targets in your project's `Makefile` like normal:
