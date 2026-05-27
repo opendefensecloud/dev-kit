@@ -245,7 +245,10 @@ update-common-mk-bootstrap: ## Rewrite the common.mk: rule in Makefile to the cu
 # ── Self-update ────────────────────────────────────────────────────────────────
 # DEV_KIT_VERSION must be set by the including Makefile before -include common.mk.
 # This fallback is for environments where common.mk is used standalone.
-DEV_KIT_VERSION ?= main
+ifndef DEV_KIT_VERSION
+  $(warning DEV_KIT_VERSION was not set, using default value "main". Please consider pinning the version to avoid unexpected upgrades.)
+  DEV_KIT_VERSION := main
+endif
 
 # Performs a content-based staleness check at most once per hour.
 # If the remote content differs from the local file, deletes this file so that
