@@ -3,6 +3,9 @@
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
+# Capture the path to this file before any other includes can shift MAKEFILE_LIST.
+_COMMON_MK_PATH := $(lastword $(MAKEFILE_LIST))
+
 # Set MAKEFLAGS to suppress entering/leaving directory messages
 MAKEFLAGS += --no-print-directory
 
@@ -228,3 +231,64 @@ $(LOCALGOBIN)/ocm: $(LOCALGOBIN) $(TOOL_LOCK)
 	version=$$(cut -d@ -f2 <<< $$module); \
 	test -s $@ && grep -q "$$version" $(LOCALGOBIN)/.ocm-version 2>/dev/null || \
 	curl -s https://ocm.software/install.sh | VERSION_OCM=$$version bash -s -- $(LOCALGOBIN) && echo $$version > $(LOCALGOBIN)/.ocm-version
+
+# Rewrites the common.mk: rule in the calling project's Makefile to the current bootstrap format.
+# Run once per repository to migrate from any older recipe shape.
+.PHONY: update-common-mk-bootstrap
+update-common-mk-bootstrap: ## Rewrite the common.mk: rule in Makefile to the current bootstrap format
+	@tmp=Makefile.tmp; \
+	awk ' \
+	BEGIN { found = 0 } \
+	/^common\.mk:$$/ { \
+		found = 1; \
+		print; \
+		print "\t@[ -f .common.mk-download ] || \\"; \
+		print "\t\tcurl --fail -sSL https://raw.githubusercontent.com/opendefensecloud/dev-kit/$$(DEV_KIT_VERSION)/common.mk \\"; \
+		print "\t\t  -o .common.mk-download"; \
+		print "\tmv .common.mk-download $$@"; \
+		print "\tprintf \047%s\047 \047$$(DEV_KIT_VERSION)\047 > .common.mk-version"; \
+		print "\ttouch .common.mk-checked"; \
+		skip = 1; next \
+	} \
+	skip && /^\t/ { next } \
+	{ skip = 0; print } \
+	END { exit(found ? 0 : 1) } \
+	' Makefile > "$$tmp" && mv "$$tmp" Makefile || { rm -f "$$tmp"; echo "error: common.mk: rule not found in Makefile" >&2; exit 1; }
+	@echo "Updated common.mk: bootstrap in Makefile"
+
+# ── Self-update ────────────────────────────────────────────────────────────────
+# DEV_KIT_VERSION must be set by the including Makefile before -include common.mk.
+# This fallback is for environments where common.mk is used standalone.
+ifndef DEV_KIT_VERSION
+  $(warning DEV_KIT_VERSION was not set, using default value "main". Please consider pinning the version to avoid unexpected upgrades.)
+  DEV_KIT_VERSION := main
+endif
+
+# Performs a content-based staleness check at most once per hour.
+# If the remote content differs from the local file, deletes this file so that
+# Make's include-file-remake mechanism triggers the project's common.mk: rule on
+# its next restart — picking up the pre-downloaded .common.mk-download file.
+_COMMON_MK_SELF_UPDATE := $(shell \
+  hash_cmd=$$(command -v sha256sum >/dev/null 2>&1 && echo "sha256sum" || echo "shasum -a 256"); \
+  stored=$$(cat .common.mk-version 2>/dev/null); \
+  if [ "$$stored" != "$(DEV_KIT_VERSION)" ]; then \
+    rm -f .common.mk-checked .common.mk-download; \
+  elif find .common.mk-checked -mmin -60 2>/dev/null | grep -q .; then \
+    exit 0; \
+  fi; \
+  if curl --fail -sSL \
+      'https://raw.githubusercontent.com/opendefensecloud/dev-kit/$(DEV_KIT_VERSION)/common.mk' \
+      -o .common.mk-download 2>/dev/null; then \
+    remote=$$($$hash_cmd .common.mk-download | cut -d' ' -f1); \
+    local_hash=$$($$hash_cmd '$(_COMMON_MK_PATH)' 2>/dev/null | cut -d' ' -f1); \
+	printf '%s' '$(DEV_KIT_VERSION)' > .common.mk-version; \
+    if [ "$$remote" = "$$local_hash" ]; then \
+      rm -f .common.mk-download; \
+      touch .common.mk-checked; \
+    else \
+      rm -f '$(_COMMON_MK_PATH)'; \
+    fi; \
+  else \
+    echo >&2 'warning: could not fetch common.mk update, using cached version'; \
+    touch .common.mk-checked; \
+  fi)
