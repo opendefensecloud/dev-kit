@@ -1,0 +1,8 @@
+name: Diff Check
+description: Check for uncommitted changes after running a command.
+runs:
+  using: composite
+  steps:
+    - id: check-diff
+      shell: bash
+      run: ${{ github.action_path }}/verify-clean.sh

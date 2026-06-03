@@ -1,0 +1,12 @@
+name: Get Go version
+description: Extract Go version from flake.nix
+outputs:
+  version:
+    description: Go version string
+    value: ${{ steps.extract.outputs.version }}
+runs:
+  using: composite
+  steps:
+    - id: extract
+      shell: bash
+      run: ${{ github.action_path }}/extract-go-version.sh
