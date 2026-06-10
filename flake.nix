@@ -25,7 +25,7 @@
   };
 
   outputs = { self, nixpkgs, flake-utils, git-hooks, go-overlay, gomod2nix, ... }@inputs: {
-    lib.mkShell = { system, packages ? [], preCommitHooks ? {}, goVersion ? null, shellHook ? "", ... }:
+    lib.mkShell = { system, name ? "dev-shell", packages ? [], inputsFrom ? [], preCommitHooks ? {}, goVersion ? null, shellHook ? "", env ? {}, ... }:
     let
       pkgs = import nixpkgs {
         inherit system;
@@ -82,6 +82,8 @@
       };
     in
       pkgs.mkShell {
+        inherit name env inputsFrom;
+
         shellHook = gitHooks.shellHook + ''
           [[ -f .git/hooks/pre-commit.legacy ]] && rm -v .git/hooks/pre-commit.legacy
         '' + shellHook;
