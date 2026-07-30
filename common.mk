@@ -63,13 +63,10 @@ invalid;e4e669;This doesn't seem right
 question;37326e;Further information is requested
 wontfix;ffffff;This will not be worked on
 chore;ededed;A routine task or common potentially re-occurring task
-feature;a2eeef;New feature or request
 go;16e2e2;Pull requests that update go code
 ok-to-helm;0e8a16;PR is allowed to build an publish helm chart
 dependencies;0366d6;Pull requests that update a dependency file
 github-actions;80c4c6;PR created via GitHub action
-help-wanted;811857;Extra attention is needed
-good-first-issue;7057ff;Good for newcomers
 needs-triage;eab668;Issue that has not been reviewed
 ok-to-image;0e8a16;PR is allowed to run container build
 ok-to-test;0e8a16;PR is allowed to be tested
