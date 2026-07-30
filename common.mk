@@ -111,9 +111,11 @@ repo-settings: ## Reconcile GitHub repository settings (labels, merge strategy, 
 	\
 	echo "  Configuring merge strategy..."; \
 	$(GH) api "repos/$$REPO" -X PATCH \
-		-f allow_merge_commit=true \
-		-f allow_squash_merge=false \
+		-f allow_merge_commit=false \
+		-f allow_squash_merge=true \
 		-f allow_rebase_merge=false \
+		-f squash_merge_commit_title=PR_TITLE \
+		-f squash_merge_commit_message=PR_BODY \
 		-f delete_branch_on_merge=true \
 		-f allow_auto_merge=true > /dev/null; \
 	\
