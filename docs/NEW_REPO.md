@@ -35,6 +35,14 @@ make repo-settings
 
 This reconciles labels, merge strategy (merge commits only, auto-merge enabled, delete branch on merge), secret scanning, and the `protect-main` branch ruleset. See `make help` for details.
 
+The branch protection ruleset is configurable via make variables, e.g.:
+
+```sh
+make repo-settings REPO_STATUS_CHECKS='["CI","lint"]' REPO_REQUIRE_BRANCH_UP_TO_DATE=true REPO_RULESET_BRANCHES='["release/*"]'
+```
+
+See the README for the full list of `REPO_*` variables.
+
 ## 4. Set up GitHub organization secrets
 
 The following secrets must be whitelisted for your repository at the organization level

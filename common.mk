@@ -74,28 +74,19 @@ spike;b23adb;A task to research a question and resolve problems
 endef
 export REPO_LABELS
 
-REPO_RULESET := { \
-	"name": "protect-main", \
-	"target": "branch", \
-	"enforcement": "active", \
-	"conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } }, \
-	"rules": [ \
-		{ "type": "deletion" }, \
-		{ "type": "non_fast_forward" }, \
-		{ "type": "creation" }, \
-		{ "type": "required_signatures" }, \
-		{ "type": "pull_request", "parameters": { \
-			"required_approving_review_count": 1, \
-			"dismiss_stale_reviews_on_push": true, \
-			"required_reviewers": [], \
-			"require_code_owner_review": false, \
-			"require_last_push_approval": false, \
-			"required_review_thread_resolution": true, \
-			"allowed_merge_methods": ["squash", "rebase", "merge"] \
-		}} \
-	], \
-	"bypass_actors": [{ "actor_type": "OrganizationAdmin", "bypass_mode": "always" }] \
-}
+# Branch protection ruleset — configurable per repository. The default branch
+# is always protected; REPO_RULESET_BRANCHES adds further branch patterns
+# (a JSON array, e.g. '["release/*"]'; short names are normalized to refs/heads/...).
+# REPO_STATUS_CHECKS is a JSON array of status-check contexts that must pass
+# (each job name is used as-is, so contexts with spaces work).
+# Booleans must be `true` or `false`. Example:
+#   make repo-settings REPO_ADMIN_BYPASS=false REPO_STATUS_CHECKS='["CI","Check action pins"]' REPO_RULESET_BRANCHES='["release/*"]'
+REPO_ADMIN_BYPASS ?= true
+REPO_REQUIRED_APPROVING_REVIEW_COUNT ?= 1
+REPO_REQUIRE_CODE_OWNER_REVIEW ?= false
+REPO_REQUIRE_BRANCH_UP_TO_DATE ?= false
+REPO_STATUS_CHECKS ?= []
+REPO_RULESET_BRANCHES ?= []
 
 .PHONY: repo-settings
 repo-settings: ## Reconcile GitHub repository settings (labels, merge strategy, branch protection, security)
@@ -122,12 +113,55 @@ repo-settings: ## Reconcile GitHub repository settings (labels, merge strategy, 
 		--input <(echo '{"security_and_analysis":{"secret_scanning":{"status":"enabled"}}}') > /dev/null; \
 	\
 	echo "  Configuring branch protection ruleset..."; \
+	if [ "$(REPO_REQUIRE_BRANCH_UP_TO_DATE)" = "true" ] && ! echo '$(REPO_STATUS_CHECKS)' | $(JQ) -e 'length > 0' > /dev/null 2>&1; then \
+		echo "error: REPO_REQUIRE_BRANCH_UP_TO_DATE=true requires at least one value in REPO_STATUS_CHECKS"; \
+		exit 1; \
+	fi; \
+	RULESET_JSON=$$($(JQ) -cn \
+		--argjson branches '$(REPO_RULESET_BRANCHES)' \
+		--argjson checks '$(REPO_STATUS_CHECKS)' \
+		--argjson approvals '$(REPO_REQUIRED_APPROVING_REVIEW_COUNT)' \
+		--argjson codeOwner '$(REPO_REQUIRE_CODE_OWNER_REVIEW)' \
+		--argjson adminBypass '$(REPO_ADMIN_BYPASS)' \
+		--argjson upToDate '$(REPO_REQUIRE_BRANCH_UP_TO_DATE)' \
+		'($$branches | map(select(length > 0)) | map(if startswith("~") or startswith("refs/") then . else "refs/heads/" + . end)) as $$bs | \
+		($$checks | map(select(length > 0))) as $$cs | \
+		{ name: "protect-main", target: "branch", enforcement: "active", \
+		  conditions: { ref_name: { include: (["~DEFAULT_BRANCH"] + $$bs | unique), exclude: [] } }, \
+		  rules: ([ \
+		    { type: "deletion" }, \
+		    { type: "non_fast_forward" }, \
+		    { type: "creation" }, \
+		    { type: "required_signatures" }, \
+		    { type: "pull_request", parameters: { \
+		      required_approving_review_count: $$approvals, \
+		      dismiss_stale_reviews_on_push: true, \
+		      required_reviewers: [], \
+		      require_code_owner_review: $$codeOwner, \
+		      require_last_push_approval: false, \
+		      required_review_thread_resolution: true, \
+		      allowed_merge_methods: ["squash", "rebase", "merge"] \
+		    } } \
+		  ] + (if ($$cs | length > 0) then \
+		    [{ type: "required_status_checks", parameters: { \
+		      strict_required_status_checks_policy: $$upToDate, \
+		      required_status_checks: [$$cs | .[] | { context: . }] \
+		    } }] else [] end)), \
+		  bypass_actors: (if $$adminBypass then [{ actor_type: "OrganizationAdmin", bypass_mode: "always" }] else [] end) \
+		}'); \
+	echo "    branches: $$(echo "$$RULESET_JSON" | $(JQ) -r '.conditions.ref_name.include | join(", ")')"; \
+	echo "    approvals: $(REPO_REQUIRED_APPROVING_REVIEW_COUNT)"; \
+	echo "    code owner review: $(REPO_REQUIRE_CODE_OWNER_REVIEW)"; \
+	echo "    branch up-to-date: $(REPO_REQUIRE_BRANCH_UP_TO_DATE)"; \
+	echo "    required status checks: $(REPO_STATUS_CHECKS)"; \
+	echo "    admin bypass: $(REPO_ADMIN_BYPASS)"; \
+	\
 	existing=$$($(GH) api "repos/$$REPO/rulesets" -q '.[] | select(.name=="protect-main") | .id' 2>/dev/null); \
 	if [ -n "$$existing" ]; then \
-		$(GH) api "repos/$$REPO/rulesets/$$existing" -X PUT --input <(echo '$(REPO_RULESET)') > /dev/null; \
+		$(GH) api "repos/$$REPO/rulesets/$$existing" -X PUT --input <(echo "$$RULESET_JSON") > /dev/null; \
 		echo "    Updated existing ruleset (id: $$existing)"; \
 	else \
-		$(GH) api "repos/$$REPO/rulesets" -X POST --input <(echo '$(REPO_RULESET)') > /dev/null; \
+		$(GH) api "repos/$$REPO/rulesets" -X POST --input <(echo "$$RULESET_JSON") > /dev/null; \
 		echo "    Created new ruleset"; \
 	fi; \
 	\

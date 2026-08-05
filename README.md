@@ -102,7 +102,18 @@ It configures:
 - **Labels** — creates/updates the standard set of issue and PR labels
 - **Merge strategy** — merge commits only (no squash or rebase), auto-merge enabled, delete branch on merge
 - **Secret scanning** — enabled
-- **Branch protection** — a "protect-main" ruleset on the default branch: requires PRs with 1 approval, dismisses stale reviews, requires review thread resolution, enforces commit signatures, prevents direct pushes/deletions/non-fast-forwards (org admins can bypass)
+- **Branch protection** — a "protect-main" ruleset on the default branch (and any `REPO_RULESET_BRANCHES` patterns): requires PRs with 1 approval, dismisses stale reviews, requires review thread resolution, enforces commit signatures, prevents direct pushes/deletions/non-fast-forwards
+
+The branch protection ruleset is configurable via make variables (set them in your `Makefile` or pass them on the command line, e.g. `make repo-settings REPO_STATUS_CHECKS='["CI","lint"]' REPO_RULESET_BRANCHES='["release/*"]'`):
+
+| Variable                                         | Default | Description                                                |
+| ---                                              | ---     | ---                                                        |
+| `REPO_ADMIN_BYPASS`                              | `true`  | When `false`, org admins cannot bypass the ruleset         |
+| `REPO_REQUIRED_APPROVING_REVIEW_COUNT`           | `1`     | Number of approving reviews required to merge              |
+| `REPO_REQUIRE_CODE_OWNER_REVIEW`                 | `false` | Require an approving review from code owners               |
+| `REPO_REQUIRE_BRANCH_UP_TO_DATE`                 | `false` | Require branches to be up to date before merging (needs at least one `REPO_STATUS_CHECKS` value; `repo-settings` fails otherwise) |
+| `REPO_STATUS_CHECKS`                             | `[]`    | JSON array of status-check contexts that must pass (e.g. `["CI","Check action pins"]`); each job name is used as-is, so contexts with spaces work; the `required_status_checks` rule is only added when this is non-empty |
+| `REPO_RULESET_BRANCHES`                          | `[]`    | JSON array of additional branch patterns the ruleset applies to (e.g. `["release/*"]`); short names are normalized to `refs/heads/...`; the default branch is always protected |
 
 ### Default git hooks
 
