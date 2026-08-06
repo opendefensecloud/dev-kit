@@ -100,14 +100,17 @@ Run `make repo-settings` to reconcile your GitHub repository with the organizati
 It configures:
 
 - **Labels** — creates/updates the standard set of issue and PR labels
-- **Merge strategy** — merge commits only (no squash or rebase), auto-merge enabled, delete branch on merge
+- **Merge strategy** — merge commits only by default (configurable via `REPO_ALLOW_MERGE_COMMIT`, `REPO_ALLOW_SQUASH_MERGE`, `REPO_ALLOW_REBASE_MERGE`), auto-merge enabled, delete branch on merge
 - **Secret scanning** — enabled
 - **Branch protection** — a "protect-main" ruleset on the default branch (and any `REPO_RULESET_BRANCHES` patterns): requires PRs with 1 approval, dismisses stale reviews, requires review thread resolution, enforces commit signatures, prevents direct pushes/deletions/non-fast-forwards
 
-The branch protection ruleset is configurable via make variables (set them in your `Makefile` or pass them on the command line, e.g. `make repo-settings REPO_STATUS_CHECKS='["CI","lint"]' REPO_RULESET_BRANCHES='["release/*"]'`):
+The repository settings are configurable via make variables (set them in your `Makefile` or pass them on the command line, e.g. `make repo-settings REPO_STATUS_CHECKS='["CI","lint"]' REPO_RULESET_BRANCHES='["release/*"]'`):
 
 | Variable                                         | Default | Description                                                |
 | ---                                              | ---     | ---                                                        |
+| `REPO_ALLOW_MERGE_COMMIT`                        | `true`  | Allow merge commits in the merge strategy                  |
+| `REPO_ALLOW_SQUASH_MERGE`                        | `false` | Allow squash merging                                       |
+| `REPO_ALLOW_REBASE_MERGE`                        | `false` | Allow rebase merging                                       |
 | `REPO_ADMIN_BYPASS`                              | `true`  | When `false`, org admins cannot bypass the ruleset         |
 | `REPO_REQUIRED_APPROVING_REVIEW_COUNT`           | `1`     | Number of approving reviews required to merge              |
 | `REPO_REQUIRE_CODE_OWNER_REVIEW`                 | `false` | Require an approving review from code owners               |

@@ -33,7 +33,7 @@ Run:
 make repo-settings
 ```
 
-This reconciles labels, merge strategy (merge commits only, auto-merge enabled, delete branch on merge), secret scanning, and the `protect-main` branch ruleset. See `make help` for details.
+This reconciles labels, merge strategy (merge commits only by default, configurable via the `REPO_ALLOW_*` variables; auto-merge enabled, delete branch on merge), secret scanning, and the `protect-main` branch ruleset. See `make help` for details.
 
 The branch protection ruleset is configurable via make variables, e.g.:
 
