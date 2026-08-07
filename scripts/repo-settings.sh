@@ -14,9 +14,10 @@ set -euo pipefail
 #   REPO_REQUIRE_BRANCH_UP_TO_DATE         require branches up to date (requires status checks)
 #   REPO_STATUS_CHECKS                     JSON array of required status-check contexts
 #   REPO_RULESET_BRANCHES                  JSON array of additional branch patterns
-#   REPO_ALLOW_MERGE_COMMIT                allow merge commits in the merge strategy
+#   REPO_ALLOW_MERGE_COMMIT                allow merge commits in the merge strategy and ruleset
 #   REPO_ALLOW_SQUASH_MERGE                allow squash merging
 #   REPO_ALLOW_REBASE_MERGE                allow rebase merging
+#   REPO_REQUIRE_LAST_PUSH_APPROVAL        require the most recent push to be approved before merging
 #   DEV_KIT_VERSION                        dev-kit version to fetch the workflow from
 #   GH, JQ                                 commands used to talk to GitHub and build JSON
 
@@ -40,6 +41,25 @@ REPO_RULESET_BRANCHES_EFFECTIVE=$(echo "$REPO_RULESET_BRANCHES" | "$JQ" -c '[.[]
 if [ "$REPO_REQUIRE_BRANCH_UP_TO_DATE" = "true" ] &&
   [ "$REPO_STATUS_CHECKS_EFFECTIVE" = "[]" ]; then
   echo "error: REPO_REQUIRE_BRANCH_UP_TO_DATE=true requires at least one value in REPO_STATUS_CHECKS" >&2
+  exit 1
+fi
+
+allowed_merge_methods=$(
+  # shellcheck disable=SC2016 # $variables belong to jq, not the shell
+  "$JQ" -cn \
+    --argjson merge  "$REPO_ALLOW_MERGE_COMMIT" \
+    --argjson squash "$REPO_ALLOW_SQUASH_MERGE" \
+    --argjson rebase "$REPO_ALLOW_REBASE_MERGE" \
+    '[
+      if $merge  then "merge"  else empty end,
+      if $squash then "squash" else empty end,
+      if $rebase then "rebase" else empty end
+    ]
+    '
+)
+
+if [ "$allowed_merge_methods" = "[]" ]; then
+  echo "error: at least one merge method must be allowed" >&2
   exit 1
 fi
 
@@ -94,6 +114,8 @@ RULESET_JSON=$(
     --argjson codeOwner "$REPO_REQUIRE_CODE_OWNER_REVIEW" \
     --argjson adminBypass "$REPO_ADMIN_BYPASS" \
     --argjson upToDate "$REPO_REQUIRE_BRANCH_UP_TO_DATE" \
+    --argjson allowedMergeMethods "$allowed_merge_methods" \
+    --argjson requireLastPushApproval "$REPO_REQUIRE_LAST_PUSH_APPROVAL" \
     '{ name: "protect-main", target: "branch", enforcement: "active",
        conditions: { ref_name: { include: $branches, exclude: [] } },
        rules: ([
@@ -106,9 +128,9 @@ RULESET_JSON=$(
            dismiss_stale_reviews_on_push: true,
            required_reviewers: [],
            require_code_owner_review: $codeOwner,
-           require_last_push_approval: false,
+           require_last_push_approval: $requireLastPushApproval,
            required_review_thread_resolution: true,
-           allowed_merge_methods: ["squash", "rebase", "merge"]
+           allowed_merge_methods: $allowedMergeMethods
          } }
        ] + (if ($checks | length > 0) then
          [{ type: "required_status_checks", parameters: {

@@ -100,9 +100,9 @@ Run `make repo-settings` to reconcile your GitHub repository with the organizati
 It configures:
 
 - **Labels** — creates/updates the standard set of issue and PR labels
-- **Merge strategy** — merge commits only by default (configurable via `REPO_ALLOW_MERGE_COMMIT`, `REPO_ALLOW_SQUASH_MERGE`, `REPO_ALLOW_REBASE_MERGE`), auto-merge enabled, delete branch on merge
+- **Merge strategy** — merge commits only by default, configurable via `REPO_ALLOW_MERGE_COMMIT`, `REPO_ALLOW_SQUASH_MERGE`, `REPO_ALLOW_REBASE_MERGE` (these also restrict the ruleset's allowed merge methods; at least one must be enabled or `repo-settings` fails); auto-merge enabled, delete branch on merge
 - **Secret scanning** — enabled
-- **Branch protection** — a "protect-main" ruleset on the default branch (and any `REPO_RULESET_BRANCHES` patterns): requires PRs with 1 approval, dismisses stale reviews, requires review thread resolution, enforces commit signatures, prevents direct pushes/deletions/non-fast-forwards
+- **Branch protection** — a "protect-main" ruleset on the default branch (and any `REPO_RULESET_BRANCHES` patterns): requires PRs with 1 approval, dismisses stale reviews, requires review thread resolution, enforces commit signatures, requires approval of the latest push when `REPO_REQUIRE_LAST_PUSH_APPROVAL` is `true`, prevents direct pushes/deletions/non-fast-forwards
 
 The repository settings are configurable via make variables (set them in your `Makefile` or pass them on the command line, e.g. `make repo-settings REPO_STATUS_CHECKS='["CI","lint"]' REPO_RULESET_BRANCHES='["release/*"]'`):
 
@@ -111,6 +111,7 @@ The repository settings are configurable via make variables (set them in your `M
 | `REPO_ALLOW_MERGE_COMMIT`                        | `true`  | Allow merge commits in the merge strategy                  |
 | `REPO_ALLOW_SQUASH_MERGE`                        | `false` | Allow squash merging                                       |
 | `REPO_ALLOW_REBASE_MERGE`                        | `false` | Allow rebase merging                                       |
+| `REPO_REQUIRE_LAST_PUSH_APPROVAL`                | `false` | Require the most recent push to be approved before merging |
 | `REPO_ADMIN_BYPASS`                              | `true`  | When `false`, org admins cannot bypass the ruleset         |
 | `REPO_REQUIRED_APPROVING_REVIEW_COUNT`           | `1`     | Number of approving reviews required to merge              |
 | `REPO_REQUIRE_CODE_OWNER_REVIEW`                 | `false` | Require an approving review from code owners               |
