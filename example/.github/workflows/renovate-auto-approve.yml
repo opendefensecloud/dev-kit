@@ -4,7 +4,7 @@
 name: renovate-auto-approve
 on:
   pull_request:
-    types: [opened, reopened, synchronize, labeled]
+    types: [opened, reopened, synchronize, labeled, unlabeled]
 permissions:
   pull-requests: write
 jobs:

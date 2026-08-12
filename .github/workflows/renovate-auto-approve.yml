@@ -35,6 +35,10 @@ on:
 permissions:
   pull-requests: write
 
+concurrency:
+  group: renovate-auto-approve-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   auto-approve:
     runs-on: ubuntu-latest
@@ -69,6 +73,12 @@ jobs:
           fi
           if [ "$latest_state" = "APPROVED" ]; then
             echo "Already approved by github-actions; nothing to do."
+            exit 0
+          fi
+          # Re-read labels right before approving: the block label may have been
+          # added after this run started, concurrently with this approval.
+          if gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name' | grep -qxF "$BLOCK_LABEL"; then
+            echo "PR now carries the $BLOCK_LABEL label; not approving."
             exit 0
           fi
           gh pr review "$PR_NUMBER" --approve \
