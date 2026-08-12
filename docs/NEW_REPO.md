@@ -76,6 +76,17 @@ preCommitHooks = {
 };
 ```
 
+### Renovate auto-approve (optional)
+
+To let Renovate auto-merge digest, patch, and minor PRs without a manual approval, copy `example/.github/workflows/renovate-auto-approve.yml` into your project and pin the `uses:` ref to a dev-kit release tag or commit SHA. It calls dev-kit's reusable `renovate-auto-approve.yml`, which approves Renovate PRs labeled `automerge` and skips (and revokes) anything labeled `security`.
+
+Two more things are needed:
+
+- **Settings > Actions > General > Workflow permissions:** enable ["Allow GitHub Actions to create and approve pull requests"](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository#preventing-github-actions-from-creating-or-approving-pull-requests), otherwise the approval is rejected.
+- The `protect-main` ruleset from `make repo-settings` already requires 1 approval and status checks. Put your CI/e2e checks in `REPO_STATUS_CHECKS` so the merge stays gated on them.
+
+Which update types are eligible is defined by the [renovate-config](https://github.com/opendefensecloud/renovate-config) presets. Major and security updates never get the `automerge` label, so they still need a human.
+
 ## 6. Add the pull request template
 
 Copy `.github/pull_request_template.md` from this repository into your project. It provides a
@@ -103,6 +114,7 @@ If Renovate is not enabled, check that the Renovate GitHub App is installed for 
 - [ ] `make help` lists all available targets
 - [ ] `make repo-settings` ran successfully
 - [ ] GitHub workflows are in place and passing
+- [ ] Renovate auto-approve workflow added and "Allow GitHub Actions to approve pull requests" enabled (if using automerge)
 - [ ] Renovate onboarding PR has been merged
 - [ ] Organization secrets are whitelisted for the repo
 - [ ] Private runners are whitelisted (if applicable)
