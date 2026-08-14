@@ -1,0 +1,85 @@
+name: renovate-auto-approve
+
+# Reusable workflow. A consuming repo triggers it on pull_request and calls it:
+#
+#   jobs:
+#     approve:
+#       uses: opendefensecloud/dev-kit/.github/workflows/renovate-auto-approve.yml@<sha-or-tag>
+#       permissions:
+#         pull-requests: write
+#
+# It approves a Renovate PR that carries the automerge label and not the block
+# label (security). If a PR later gains the block label, it revokes its own
+# earlier approval so a human is required again. The merge itself always stays
+# gated on the repo's required status checks.
+#
+# Which update types are eligible (the automerge label) is decided by the
+# renovate-config presets, not here: github>opendefensecloud/renovate-config.
+
+on:
+  workflow_call:
+    inputs:
+      automerge-label:
+        description: Label that marks a Renovate PR as safe to auto-approve.
+        type: string
+        default: automerge
+      block-label:
+        description: Label that blocks auto-approval, and revokes an earlier one.
+        type: string
+        default: security
+      renovate-actor:
+        description: Login of the Renovate app that authors the pull requests.
+        type: string
+        default: renovate[bot]
+
+permissions:
+  pull-requests: write
+
+concurrency:
+  group: renovate-auto-approve-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  auto-approve:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.user.login == inputs.renovate-actor &&
+      (contains(github.event.pull_request.labels.*.name, inputs.automerge-label) ||
+       contains(github.event.pull_request.labels.*.name, inputs.block-label))
+    steps:
+      - name: Approve, or revoke a prior approval if the block label appears
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          LABEL: ${{ inputs.automerge-label }}
+          BLOCK_LABEL: ${{ inputs.block-label }}
+          HAS_BLOCK: ${{ contains(github.event.pull_request.labels.*.name, inputs.block-label) }}
+        run: |
+          set -euo pipefail
+          # Latest review state left by this workflow's identity (github-actions[bot]).
+          latest_state=$(gh api "repos/$GH_REPO/pulls/$PR_NUMBER/reviews" \
+            --jq 'map(select((.user.login // "" | ascii_downcase) | startswith("github-actions"))) | last | .state // empty')
+          if [ "$HAS_BLOCK" = "true" ]; then
+            if [ "$latest_state" = "APPROVED" ]; then
+              echo "PR now carries the $BLOCK_LABEL label; revoking the earlier automated approval."
+              gh pr review "$PR_NUMBER" --request-changes \
+                --body "Revoked: this PR is now labeled \`$BLOCK_LABEL\` and needs a human review."
+            else
+              echo "PR carries the $BLOCK_LABEL label; no automated approval to revoke."
+            fi
+            exit 0
+          fi
+          if [ "$latest_state" = "APPROVED" ]; then
+            echo "Already approved by github-actions; nothing to do."
+            exit 0
+          fi
+          # Re-read labels right before approving: the block label may have been
+          # added after this run started, concurrently with this approval.
+          if gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name' | grep -qxF "$BLOCK_LABEL"; then
+            echo "PR now carries the $BLOCK_LABEL label; not approving."
+            exit 0
+          fi
+          gh pr review "$PR_NUMBER" --approve \
+            --body "Auto-approved: Renovate \`$LABEL\` update. Merge remains gated on required status checks."
