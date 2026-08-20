@@ -115,6 +115,7 @@ help: ## Display this help.
 
 .PHONY: clean
 clean:
+	-chmod -R u+w $(LOCALBIN)
 	rm -rf $(LOCALBIN)
 
 .PHONY: shellcheck
