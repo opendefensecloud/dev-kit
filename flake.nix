@@ -63,8 +63,13 @@
           entry = "make lint";
           pass_filenames = false;
         };
+        # Disabled by default: `make scan` resolves every dependency against
+        # the osv.dev API, which adds ~1min to any commit touching a manifest
+        # file. Vulnerability scanning belongs in CI, where it runs on a
+        # schedule and on every pull request without blocking a commit.
+        # Projects without a CI-side scan can opt back in per-project.
         osv-scanner = mkDefaultAttrs {
-          enable = true;
+          enable = false;
           entry = "make scan";
           files = "\\.(mod|sum)$|requirements\\.txt$";
           pass_filenames = false;
