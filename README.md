@@ -26,7 +26,7 @@ The included `common.mk` provides:
 | `shellcheck`          | Run shellcheck on shell scripts             |
 | `scan`                | Scan for vulnerabilities using osv-scanner  |
 | `setup-local-cluster` | Create a Kind cluster for local development |
-| `repo-settings`       | Reconcile GitHub repository settings         |
+| `repo-settings`       | Reconcile GitHub repository settings        |
 
 ### Variables
 
@@ -106,29 +106,29 @@ It configures:
 
 The repository settings are configurable via make variables (set them in your `Makefile` or pass them on the command line, e.g. `make repo-settings REPO_STATUS_CHECKS='["CI","lint"]' REPO_RULESET_BRANCHES='["release/*"]'`):
 
-| Variable                                         | Default | Description                                                |
-| ---                                              | ---     | ---                                                        |
-| `REPO_ALLOW_MERGE_COMMIT`                        | `true`  | Allow merge commits in the merge strategy                  |
-| `REPO_ALLOW_SQUASH_MERGE`                        | `false` | Allow squash merging                                       |
-| `REPO_ALLOW_REBASE_MERGE`                        | `false` | Allow rebase merging                                       |
-| `REPO_REQUIRE_LAST_PUSH_APPROVAL`                | `false` | Require the most recent push to be approved before merging |
-| `REPO_ADMIN_BYPASS`                              | `true`  | When `false`, org admins cannot bypass the ruleset         |
-| `REPO_REQUIRED_APPROVING_REVIEW_COUNT`           | `1`     | Number of approving reviews required to merge              |
-| `REPO_REQUIRE_CODE_OWNER_REVIEW`                 | `false` | Require an approving review from code owners               |
-| `REPO_REQUIRE_BRANCH_UP_TO_DATE`                 | `false` | Require branches to be up to date before merging (needs at least one `REPO_STATUS_CHECKS` value; `repo-settings` fails otherwise) |
-| `REPO_STATUS_CHECKS`                             | `[]`    | JSON array of status-check contexts that must pass (e.g. `["CI","Check action pins"]`); each job name is used as-is, so contexts with spaces work; the `required_status_checks` rule is only added when this is non-empty |
-| `REPO_RULESET_BRANCHES`                          | `[]`    | JSON array of additional branch patterns the ruleset applies to (e.g. `["release/*"]`); short names are normalized to `refs/heads/...`; the default branch is always protected |
+| Variable                               | Default | Description                                                                                                                                                                                                               |
+| ---                                    | ---     | ---                                                                                                                                                                                                                       |
+| `REPO_ALLOW_MERGE_COMMIT`              | `true`  | Allow merge commits in the merge strategy                                                                                                                                                                                 |
+| `REPO_ALLOW_SQUASH_MERGE`              | `false` | Allow squash merging                                                                                                                                                                                                      |
+| `REPO_ALLOW_REBASE_MERGE`              | `false` | Allow rebase merging                                                                                                                                                                                                      |
+| `REPO_REQUIRE_LAST_PUSH_APPROVAL`      | `false` | Require the most recent push to be approved before merging                                                                                                                                                                |
+| `REPO_ADMIN_BYPASS`                    | `true`  | When `false`, org admins cannot bypass the ruleset                                                                                                                                                                        |
+| `REPO_REQUIRED_APPROVING_REVIEW_COUNT` | `1`     | Number of approving reviews required to merge                                                                                                                                                                             |
+| `REPO_REQUIRE_CODE_OWNER_REVIEW`       | `false` | Require an approving review from code owners                                                                                                                                                                              |
+| `REPO_REQUIRE_BRANCH_UP_TO_DATE`       | `false` | Require branches to be up to date before merging (needs at least one `REPO_STATUS_CHECKS` value; `repo-settings` fails otherwise)                                                                                         |
+| `REPO_STATUS_CHECKS`                   | `[]`    | JSON array of status-check contexts that must pass (e.g. `["CI","Check action pins"]`); each job name is used as-is, so contexts with spaces work; the `required_status_checks` rule is only added when this is non-empty |
+| `REPO_RULESET_BRANCHES`                | `[]`    | JSON array of additional branch patterns the ruleset applies to (e.g. `["release/*"]`); short names are normalized to `refs/heads/...`; the default branch is always protected                                            |
 
 ### Default git hooks
 
 The dev shell installs the following git hooks automatically:
 
-| Hook         | Stage        | Description                                     |
-| ---          | ---          | ---                                             |
-| `fmt`        | `pre-commit` | Runs `make fmt`                                 |
-| `lint`       | `pre-commit` | Runs `make lint`                                |
-| `osv-scanner`| `pre-commit` | Runs `make scan` on dependency file changes     |
-| `commitlint` | `commit-msg` | Validates commit messages against [Conventional Commits](https://www.conventionalcommits.org/) (disabled by default) |
+| Hook          | Stage        | Description                                                                                                               |
+| ---           | ---          | ---                                                                                                                       |
+| `fmt`         | `pre-commit` | Runs `make fmt`                                                                                                           |
+| `lint`        | `pre-commit` | Runs `make lint`                                                                                                          |
+| `osv-scanner` | `pre-commit` | Runs `make scan` on dependency file changes (disabled by default — see [Vulnerability scanning](#vulnerability-scanning)) |
+| `commitlint`  | `commit-msg` | Validates commit messages against [Conventional Commits](https://www.conventionalcommits.org/) (disabled by default)      |
 
 To enable the `commitlint` hook, set `commitlint.enable = true` in `preCommitHooks` and add a `.commitlintrc.yml` to the project root:
 
@@ -150,7 +150,23 @@ rules:
       - revert
 ```
 
-All default hooks can be disabled per-project via `preCommitHooks` (see below).
+All hooks can be enabled or disabled per-project via `preCommitHooks` (see below).
+
+### Vulnerability scanning
+
+The `osv-scanner` hook is **disabled by default**. `make scan` resolves every
+dependency against the osv.dev API, which adds roughly a minute to any commit
+that touches `go.mod`, `go.sum`, or `requirements.txt` — slow enough that it
+discourages small, frequent commits.
+
+Run vulnerability scanning in CI instead, on a schedule and on every pull
+request. If your project has no CI-side scan, opt back in per-project:
+
+```nix
+preCommitHooks = {
+  osv-scanner.enable = true;
+};
+```
 
 ### Customizing the dev shell
 
@@ -178,8 +194,11 @@ Modify `flake.nix` to adjust Go version, packages, and pre-commit hooks:
               enable = true;
               entry = "my-custom-script";
             };
-            osv-scanner = {
+            lint = {
               enable = false;  # disable default pre-commit hooks
+            };
+            osv-scanner = {
+              enable = true;  # enable hooks that are off by default
             };
           };
         };

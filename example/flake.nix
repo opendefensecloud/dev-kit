@@ -37,8 +37,11 @@
               enable = true;
               entry = "my-custom-script";
             };
-            osv-scanner = {
+            lint = {
               enable = false;  # disable default pre-commit hooks
+            };
+            osv-scanner = {
+              enable = true;  # enable hooks that are off by default
             };
           };
         };
