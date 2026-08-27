@@ -17,16 +17,17 @@ Copy the files from `example/` into your project and adjust them for your needs.
 
 The included `common.mk` provides:
 
-| Target                | Description                                 |
-| ---                   | ---                                         |
-| `help`                | Display all available targets               |
-| `clean`               | Remove the `bin/` directory                 |
-| `mod`                 | Run `go mod tidy`, `download`, and `verify` |
-| `golangci-lint`       | Run golangci-lint                           |
-| `shellcheck`          | Run shellcheck on shell scripts             |
-| `scan`                | Scan for vulnerabilities using osv-scanner  |
-| `setup-local-cluster` | Create a Kind cluster for local development |
-| `repo-settings`       | Reconcile GitHub repository settings        |
+| Target                      | Description                                                |
+| ---                         | ---                                                        |
+| `help`                      | Display all available targets                              |
+| `clean`                     | Remove the `bin/` directory                                |
+| `mod`                       | Run `go mod tidy`, `download`, and `verify`                |
+| `golangci-lint`             | Run golangci-lint                                          |
+| `shellcheck`                | Run shellcheck on shell scripts                            |
+| `scan`                      | Scan for vulnerabilities using osv-scanner                 |
+| `setup-local-cluster`       | Create a Kind cluster for local development                |
+| `repo-settings`             | Reconcile GitHub repository settings                       |
+| `envtest-binaries-sideload` | Populate the envtest cache from upstream K8s/etcd releases |
 
 ### Variables
 
@@ -92,6 +93,20 @@ COBRA := $(LOCALGOBIN)/cobra-cli
 cobra: $(COBRA)
 	$(COBRA) help
 ```
+
+### envtest sideloading
+
+`envtest-binaries-sideload` populates `setup-envtest`'s cache directly from
+`dl.k8s.io` and the etcd GitHub releases, for Kubernetes versions that
+controller-tools has not yet packaged into its `envtest-releases` index. Without
+it, bumping to a fresh Kubernetes release breaks `make test` until
+controller-tools catches up. It is a no-op when the version is already cached,
+so it is safe as a prerequisite of your `test` target.
+
+Set `ENVTEST_K8S_VERSION` in your own `Makefile`; `common.mk` does not default
+it. Linux downloads prebuilt binaries; macOS builds `kube-apiserver` from source
+when controller-tools has no archive for the requested version, which also needs
+`go` on `PATH` — supplied by `goVersion`, not by the default dev shell.
 
 ### Repository settings
 

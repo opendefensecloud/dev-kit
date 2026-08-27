@@ -43,12 +43,14 @@
 
       defaultPkgs = with pkgs; [
         curl
+        git
         gnumake
         jq
         kind
         kubectl
         kubernetes-helm
         shellcheck
+        unzip
         yq-go
       ];
 
