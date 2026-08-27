@@ -40,12 +40,12 @@ ARCH := $(or $(shell $(GO) env GOARCH 2>/dev/null), \
 # Binaries provided by go install / tools.lock
 ADDLICENSE ?= $(LOCALGOBIN)/addlicense
 CONTROLLER_GEN ?= $(LOCALGOBIN)/controller-gen
+COSIGN ?= $(LOCALGOBIN)/cosign
 CRD_REF_DOCS ?= $(LOCALGOBIN)/crd-ref-docs
 GINKGO ?= $(LOCALGOBIN)/ginkgo
 GOLANGCI_LINT ?= $(LOCALGOBIN)/golangci-lint
 HELM_DOCS ?= $(LOCALGOBIN)/helm-docs
 OCM ?= $(LOCALGOBIN)/ocm
-OPENAPI_GEN ?= $(LOCALGOBIN)/openapi-gen
 OPENAPI_GEN ?= $(LOCALGOBIN)/openapi-gen
 OSV_SCANNER ?= $(LOCALGOBIN)/osv-scanner
 SETUP_ENVTEST ?= $(LOCALGOBIN)/setup-envtest
