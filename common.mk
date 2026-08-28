@@ -11,6 +11,14 @@ MAKEFLAGS += --no-print-directory
 
 BUILD_PATH ?= $(shell pwd)
 
+# DEV_KIT_VERSION must be set by the including Makefile before -include common.mk.
+# This fallback is for environments where common.mk is used standalone.
+# Must precede ENVTEST_SIDELOAD, which expands it in a target name at parse time.
+ifndef DEV_KIT_VERSION
+  $(warning DEV_KIT_VERSION was not set, using default value "main". Please consider pinning the version to avoid unexpected upgrades.)
+  DEV_KIT_VERSION := main
+endif
+
 LOCALBIN ?= $(BUILD_PATH)/bin
 $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
@@ -162,6 +170,29 @@ mod: ## run go mod tidy, download, verify
 golangci-lint: $(GOLANGCI_LINT) ## run golangci-lint
 	$(GOLANGCI_LINT) run -v
 
+# Cached rather than piped to bash like repo-settings: this is a `make test`
+# prerequisite and must not need the network once the envtest cache is warm.
+# subst: DEV_KIT_VERSION may be a ref (refs/heads/main); slashes would become
+# directory separators. `~` is illegal in a git ref, so the mapping cannot
+# collide. tmp+mv: curl --fail leaves partial files on a dropped
+# transfer and there is no .DELETE_ON_ERROR. Order-only: $(LOCALBIN)'s mtime is
+# bumped by this very rename, so a normal prerequisite re-downloads every run.
+# ponytail: floating DEV_KIT_VERSION pins the script until `make clean`; pin a tag.
+ENVTEST_SIDELOAD := $(LOCALBIN)/envtest-sideload-$(subst /,~,$(DEV_KIT_VERSION)).sh
+$(ENVTEST_SIDELOAD): | $(LOCALBIN)
+	@curl --fail -sSL \
+		"https://raw.githubusercontent.com/opendefensecloud/dev-kit/$(DEV_KIT_VERSION)/scripts/envtest-sideload.sh" \
+		-o $@.download
+	@mv $@.download $@
+
+# ENVTEST_K8S_VERSION is deliberately not defaulted here: consumers set it with
+# ?= *after* `-include common.mk`, so a default here would silently win.
+.PHONY: envtest-binaries-sideload
+envtest-binaries-sideload: $(SETUP_ENVTEST) $(ENVTEST_SIDELOAD) ## Populate the envtest cache for ENVTEST_K8S_VERSION from upstream K8s/etcd releases when controller-tools hasn't packaged it. No-op if already cached.
+	@test -n "$(ENVTEST_K8S_VERSION)" || { echo "error: ENVTEST_K8S_VERSION is not set" >&2; exit 1; }
+	@SETUP_ENVTEST=$(SETUP_ENVTEST) BIN_DIR=$(LOCALBIN) YQ=$(YQ) \
+		bash $(ENVTEST_SIDELOAD) $(ENVTEST_K8S_VERSION)
+
 # Install local tools
 TOOL_LOCK := $(BUILD_PATH)/tools.lock
 
@@ -205,12 +236,8 @@ update-common-mk-bootstrap: ## Rewrite the common.mk: rule in Makefile to the cu
 	@echo "Updated common.mk: bootstrap in Makefile"
 
 # ── Self-update ────────────────────────────────────────────────────────────────
-# DEV_KIT_VERSION must be set by the including Makefile before -include common.mk.
-# This fallback is for environments where common.mk is used standalone.
-ifndef DEV_KIT_VERSION
-  $(warning DEV_KIT_VERSION was not set, using default value "main". Please consider pinning the version to avoid unexpected upgrades.)
-  DEV_KIT_VERSION := main
-endif
+# The DEV_KIT_VERSION fallback lives near the top of this file, because targets
+# that embed it in a *target name* (see ENVTEST_SIDELOAD) need it at parse time.
 
 # Performs a content-based staleness check at most once per hour.
 # If the remote content differs from the local file, deletes this file so that

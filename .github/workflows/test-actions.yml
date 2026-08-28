@@ -4,10 +4,12 @@ on:
   pull_request:
     paths:
       - '.github/actions/**/*.sh'
+      - 'scripts/*.sh'
   push:
     branches: [main]
     paths:
       - '.github/actions/**/*.sh'
+      - 'scripts/*.sh'
 
 permissions:
   contents: read
@@ -17,8 +19,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - name: Run ShellCheck on action scripts
-        run: shellcheck .github/actions/*/*.sh
+      - name: Run ShellCheck on action and dev-kit scripts
+        run: shellcheck .github/actions/*/*.sh scripts/*.sh
 
   test-scripts:
     needs: shellcheck
