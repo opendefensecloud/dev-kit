@@ -122,7 +122,8 @@ The repository settings are configurable via make variables (set them in your `M
 ### GitHub Actions
 
 The repo ships composite actions that consuming repositories reference directly.
-Pin them to a SHA with a version comment, as the action-pin check requires:
+Pin them to a SHA with a version comment, as the action-pin check requires. The
+`<40-char-sha>` placeholders below are not copy-pasteable — substitute real digests:
 
 | Action                                | Description                                                    |
 | ---                                   | ---                                                            |
@@ -142,9 +143,9 @@ jobs:
       run:
         shell: nix develop --command bash -e {0}
     steps:
-      - uses: actions/checkout@... # v7
+      - uses: actions/checkout@<40-char-sha> # v7
       - name: Set up nix
-        uses: opendefensecloud/dev-kit/.github/actions/setup-nix@... # v2.1.0
+        uses: opendefensecloud/dev-kit/.github/actions/setup-nix@<40-char-sha> # v2.1.0
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
           cachix-signing-key: ${{ secrets.CACHIX_SIGNING_KEY }}

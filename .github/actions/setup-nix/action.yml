@@ -24,6 +24,10 @@ runs:
       with:
         # Use upstream Nix, not the Determinate fork (avoids the
         # determinate-nixd binary + FlakeHub auto-enablement we don't want).
+        # Upstream announced this option would stop working on 2026-01-01;
+        # nix-installer still honours --prefer-upstream-nix as of 2026-08-31,
+        # but the action always fetches the latest installer, so this is not
+        # pinned. If it ever flips, this is the one place to change.
         determinate: false
         # Don't post install telemetry to Determinate Systems.
         diagnostic-endpoint: ''
