@@ -119,6 +119,44 @@ The repository settings are configurable via make variables (set them in your `M
 | `REPO_STATUS_CHECKS`                   | `[]`    | JSON array of status-check contexts that must pass (e.g. `["CI","Check action pins"]`); each job name is used as-is, so contexts with spaces work; the `required_status_checks` rule is only added when this is non-empty |
 | `REPO_RULESET_BRANCHES`                | `[]`    | JSON array of additional branch patterns the ruleset applies to (e.g. `["release/*"]`); short names are normalized to `refs/heads/...`; the default branch is always protected                                            |
 
+### GitHub Actions
+
+The repo ships composite actions that consuming repositories reference directly.
+Pin them to a SHA with a version comment, as the action-pin check requires:
+
+| Action                                | Description                                                    |
+| ---                                   | ---                                                            |
+| `.github/actions/setup-nix`           | Install upstream Nix and enable the shared Cachix cache        |
+| `.github/actions/get-go-version`      | Extract the Go version from `flake.nix`                        |
+| `.github/actions/diff-check`          | Fail if a command left uncommitted changes behind              |
+
+`setup-nix` replaces the two-step Nix installer + Cachix preamble that every
+job needs before it can use `nix develop` as its shell. Secrets are not visible
+inside a composite action, so the caller passes them in:
+
+```yaml
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: nix develop --command bash -e {0}
+    steps:
+      - uses: actions/checkout@... # v7
+      - name: Set up nix
+        uses: opendefensecloud/dev-kit/.github/actions/setup-nix@... # v2.1.0
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          cachix-signing-key: ${{ secrets.CACHIX_SIGNING_KEY }}
+      - run: make test
+```
+
+| Input                | Default            | Description                                                              |
+| ---                  | ---                | ---                                                                      |
+| `cachix-name`        | `opendefensecloud` | Cachix cache to use                                                      |
+| `cachix-auth-token`  | `''`               | Auth token; empty falls back to a read-only cache, as on fork PRs        |
+| `cachix-signing-key` | `''`               | Signing key; empty disables pushing to the cache                         |
+
 ### Default git hooks
 
 The dev shell installs the following git hooks automatically:
