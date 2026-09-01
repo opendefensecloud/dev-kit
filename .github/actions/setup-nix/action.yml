@@ -1,0 +1,39 @@
+name: Setup Nix
+description: Install upstream Nix and enable the shared Cachix binary cache.
+inputs:
+  cachix-name:
+    description: Name of the Cachix cache to use.
+    required: false
+    default: opendefensecloud
+  cachix-auth-token:
+    description: >-
+      Cachix auth token. Leave empty to fall back to a read-only cache, which
+      is what happens on fork pull requests, where secrets are unavailable.
+    required: false
+    default: ''
+  cachix-signing-key:
+    description: >-
+      Cachix signing key. Empty disables pushing to the cache.
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Install nix
+      uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+      with:
+        # Use upstream Nix, not the Determinate fork (avoids the
+        # determinate-nixd binary + FlakeHub auto-enablement we don't want).
+        # Upstream announced this option would stop working on 2026-01-01;
+        # nix-installer still honours --prefer-upstream-nix as of 2026-08-31,
+        # but the action always fetches the latest installer, so this is not
+        # pinned. If it ever flips, this is the one place to change.
+        determinate: false
+        # Don't post install telemetry to Determinate Systems.
+        diagnostic-endpoint: ''
+    - name: Use ${{ inputs.cachix-name }} Cachix cache
+      uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+      with:
+        name: ${{ inputs.cachix-name }}
+        authToken: ${{ inputs.cachix-auth-token }}
+        signingKey: ${{ inputs.cachix-signing-key }}
