@@ -1,9 +1,13 @@
 name: Update Action Pins
 
+permissions:
+  contents: read
+
 on:
   pull_request:
     paths:
       - ".github/workflows/**"
+      - ".github/actions/**"
 
 jobs:
   check-pins:
@@ -15,13 +19,13 @@ jobs:
           persist-credentials: false
       - name: Verify all actions are pinned to a SHA
         run: |
-          unpinned=$(grep -rE '^\s+(- )?uses: ' .github/workflows/ \
+          unpinned=$(grep -rhE '^\s+(- )?uses: ' .github/ \
             | grep -vE '^\s+(- )?uses: \.\/' \
             | grep -vE '@[0-9a-f]{40}($|\s)' || true)
           if [[ -n "$unpinned" ]]; then
             echo "::error::Found unpinned GitHub Actions (must use SHA digest, not tag):"
             echo "$unpinned"
             echo ""
-            echo "Run 'GITHUB_TOKEN=\$(gh auth token) update-action-pins .github/workflows/' to fix."
+            echo "Run 'GITHUB_TOKEN=\$(gh auth token) update-action-pins .github/workflows/ .github/actions/' to fix."
             exit 1
           fi
