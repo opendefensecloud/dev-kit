@@ -20,7 +20,7 @@ jobs:
       - name: Verify all actions are pinned to a SHA
         run: |
           unpinned=$(grep -rhE '^\s+(- )?uses: ' .github/ \
-            | grep -vE '^\s+(- )?uses: \.\/' \
+            | grep -vE "^\s+(- )?uses: ['\"]?\./" \
             | grep -vE '@[0-9a-f]{40}($|\s)' || true)
           if [[ -n "$unpinned" ]]; then
             echo "::error::Found unpinned GitHub Actions (must use SHA digest, not tag):"
