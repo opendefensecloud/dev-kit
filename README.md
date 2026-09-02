@@ -160,7 +160,7 @@ jobs:
     steps:
       - uses: actions/checkout@<40-char-sha> # v7
       - name: Set up nix
-        uses: opendefensecloud/dev-kit/.github/actions/setup-nix@<40-char-sha> # v2.1.0
+        uses: opendefensecloud/dev-kit/.github/actions/setup-nix@<40-char-sha> # <tag>
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
           cachix-signing-key: ${{ secrets.CACHIX_SIGNING_KEY }}

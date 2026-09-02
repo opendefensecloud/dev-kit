@@ -48,9 +48,11 @@ See the README for the full list of `REPO_*` variables.
 The following secrets must be whitelisted for your repository at the organization level
 (Settings > Secrets and variables > Actions > Repository access):
 
-| Secret               | Used by                            |
-| -------------------- | ---------------------------------- |
-| `ADD_TO_PROJECT_PAT` | `issues-add-to-project` workflow   |
+| Secret                | Used by                                            |
+| --------------------- | -------------------------------------------------- |
+| `ADD_TO_PROJECT_PAT`  | `issues-add-to-project` workflow                   |
+| `CACHIX_AUTH_TOKEN`   | any job using the `setup-nix` action (see below)   |
+| `CACHIX_SIGNING_KEY`  | any job using the `setup-nix` action (see below)   |
 
 If your project uses private runners, whitelist the repository in the runner group settings
 (Settings > Actions > Runner groups).
@@ -65,8 +67,32 @@ Copy the relevant workflows from `.github/workflows/` in this repository:
 | `issues-add-labels.yaml`        | Automatically adds `needs-triage` label to new issues   |
 | `issues-add-to-project.yml`     | Adds new issues and PRs to the org project board        |
 | `release-drafter.yaml`          | Drafts release notes from merged PRs                    |
+| `update-action-pins.yml`        | Fails the PR if any action is not pinned to a SHA       |
 
 If using release-drafter, also copy `.github/release-drafter.yml` (the config file).
+
+### Nix-based CI
+
+Jobs that run inside the dev shell should use the shared `setup-nix` composite action
+rather than installing Nix themselves. It installs Nix and enables the org Cachix cache in
+two steps; secrets are not visible inside a composite action, so the caller passes them:
+
+```yaml
+    defaults:
+      run:
+        shell: nix develop --command bash -e {0}
+    steps:
+      - uses: actions/checkout@<40-char-sha> # v7
+      - name: Set up nix
+        uses: opendefensecloud/dev-kit/.github/actions/setup-nix@<40-char-sha> # <tag>
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          cachix-signing-key: ${{ secrets.CACHIX_SIGNING_KEY }}
+      - run: make test
+```
+
+Both Cachix secrets are org-level (see step 4). On fork pull requests they are unavailable
+and cachix-action falls back to a read-only cache, which is the intended behaviour.
 
 If using commitlint (recommended), copy `.commitlintrc.yml` to your project root and enable the hook in `flake.nix`:
 
