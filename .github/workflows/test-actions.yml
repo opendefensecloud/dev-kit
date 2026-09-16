@@ -1,15 +1,28 @@
 name: Test Actions
 
+# Consuming repositories pin this repo by SHA, so anything shipped from here
+# reaches their CI unchanged. The triggers therefore cover what is shipped —
+# the composite actions and their pins, common.mk, the scripts and the flake —
+# not just the shell scripts. A pin bump in an action.yml used to change what
+# every consumer runs without a single job executing here.
 on:
   pull_request:
     paths:
-      - '.github/actions/**/*.sh'
-      - 'scripts/*.sh'
+      - '.github/actions/**'
+      - '.github/workflows/test-actions.yml'
+      - 'common.mk'
+      - 'flake.lock'
+      - 'flake.nix'
+      - 'scripts/**'
   push:
     branches: [main]
     paths:
-      - '.github/actions/**/*.sh'
-      - 'scripts/*.sh'
+      - '.github/actions/**'
+      - '.github/workflows/test-actions.yml'
+      - 'common.mk'
+      - 'flake.lock'
+      - 'flake.nix'
+      - 'scripts/**'
 
 permissions:
   contents: read
@@ -31,3 +44,40 @@ jobs:
         run: .github/actions/diff-check/test-verify-clean.sh
       - name: Test extract-go-version.sh
         run: .github/actions/get-go-version/test-extract-go-version.sh
+      - name: Test check-go-version.sh
+        run: scripts/test-check-go-version.sh
+
+  test-setup-nix:
+    needs: shellcheck
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Set up nix with the shared Cachix cache
+        uses: ./.github/actions/setup-nix
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          cachix-signing-key: ${{ secrets.CACHIX_SIGNING_KEY }}
+      - name: Nix is usable
+        run: nix --version
+      # Builds the shell mkShell produces, so a broken flake.nix or a pin bump
+      # that changes what the installer delivers fails here rather than in a
+      # consuming repository.
+      - name: The dev shell evaluates and builds
+        run: nix develop --command true
+      # The goVersion guard only runs on the error path, so it needs its own
+      # test: a version the locked overlay does not carry must produce the
+      # readable message, not `attribute '...' missing`.
+      - name: A missing goVersion reports what to do
+        run: |
+          if err="$(nix eval --impure .#lib.mkShell \
+              --apply 'f: (f { system = builtins.currentSystem; goVersion = "0.0.0"; }).drvPath' 2>&1)"; then
+            echo "::error::expected evaluation to fail for an unavailable goVersion"
+            exit 1
+          fi
+          if ! grep -q 'is not in the locked go-overlay' <<<"$err"; then
+            echo "::error::goVersion guard did not produce the expected message"
+            echo "$err"
+            exit 1
+          fi
+          echo "guard reported:"
+          grep -A4 'is not in the locked go-overlay' <<<"$err" || true
