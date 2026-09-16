@@ -30,26 +30,64 @@ record() {
   files+=("$3")
 }
 
-# go.mod — `go 1.27.0`, optionally with a toolchain line we ignore.
+# A file that does not exist is skipped on purpose — a library has no
+# Dockerfile. A file that *does* exist but whose pin cannot be parsed is an
+# error, never a skip: silently ignoring it is the same silent drift this script
+# exists to catch.
+
+# go.mod — `go 1.27.0`. The `toolchain` directive is a different line and is
+# deliberately not read.
 if [ -f "$GO_MOD" ]; then
-  v="$(sed -nE 's/^go[[:space:]]+([0-9]+\.[0-9]+(\.[0-9]+)?)[[:space:]]*$/\1/p' "$GO_MOD")"
-  [ -n "$v" ] && record "go.mod" "$v" "$GO_MOD"
+  candidate="$(sed -nE 's/^[[:space:]]*go[[:space:]]+([^[:space:]].*)$/\1/p' "$GO_MOD")"
+  if [ -n "$candidate" ]; then
+    v="$(printf '%s\n' "$candidate" | sed -nE 's/^([0-9]+\.[0-9]+(\.[0-9]+)?)[[:space:]]*$/\1/p')"
+    if [ -z "$v" ]; then
+      echo "error: cannot read a Go version from the go directive in $GO_MOD:" >&2
+      printf '%s\n' "$candidate" | sed 's/^/  go /' >&2
+      exit 1
+    fi
+    record "go.mod" "$v" "$GO_MOD"
+  fi
 fi
 
 # flake.nix — same expression the get-go-version action reads.
 if [ -f "$FLAKE_NIX" ]; then
-  v="$(sed -nE 's/^[[:space:]]*goVersion[[:space:]]*=[[:space:]]*"([0-9]+\.[0-9]+\.[0-9]+)";[[:space:]]*$/\1/p' "$FLAKE_NIX")"
-  if [ "$(printf '%s\n' "$v" | sed '/^$/d' | wc -l)" -gt 1 ]; then
+  candidate="$(sed -nE 's/^[[:space:]]*goVersion[[:space:]]*=[[:space:]]*(.*)$/\1/p' "$FLAKE_NIX")"
+  if [ "$(printf '%s\n' "$candidate" | sed '/^$/d' | wc -l)" -gt 1 ]; then
     echo "error: expected at most one goVersion assignment in $FLAKE_NIX, found:" >&2
-    printf '%s\n' "$v" | sed 's/^/  /' >&2
+    printf '%s\n' "$candidate" | sed 's/^/  goVersion = /' >&2
     exit 1
   fi
-  [ -n "$v" ] && record "flake.nix" "$v" "$FLAKE_NIX"
+  if [ -n "$candidate" ]; then
+    v="$(printf '%s\n' "$candidate" | sed -nE 's/^"([0-9]+\.[0-9]+\.[0-9]+)";[[:space:]]*$/\1/p')"
+    if [ -z "$v" ]; then
+      echo "error: cannot read a Go version from goVersion in $FLAKE_NIX:" >&2
+      printf '%s\n' "$candidate" | sed 's/^/  goVersion = /' >&2
+      echo "       Expected a patch-level version, as in: goVersion = \"1.27.0\";" >&2
+      exit 1
+    fi
+    record "flake.nix" "$v" "$FLAKE_NIX"
+  fi
 fi
 
 # Dockerfile — every `golang:<tag>` builder stage, digest suffix stripped.
+# Instruction keywords are case-insensitive and leading whitespace is ignored,
+# so `from golang:…` and an indented `FROM` are valid and must be seen.
 if [ -f "$DOCKERFILE" ]; then
-  mapfile -t tags < <(sed -nE 's/^FROM([[:space:]]+--[^[:space:]]+)*[[:space:]]+golang:([^@[:space:]]+).*/\2/p' "$DOCKERFILE" | sort -u)
+  mapfile -t tags < <(awk '
+    toupper($1) == "FROM" {
+      image = ""
+      for (i = 2; i <= NF; i++) {
+        if ($i ~ /^--/) continue
+        image = $i
+        break
+      }
+      if (image ~ /^golang:/) {
+        sub(/^golang:/, "", image)
+        sub(/@.*/, "", image)
+        print image
+      }
+    }' "$DOCKERFILE" | sort -u)
   if [ "${#tags[@]}" -gt 1 ]; then
     echo "error: $DOCKERFILE pins more than one golang tag: ${tags[*]}" >&2
     exit 1

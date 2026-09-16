@@ -99,6 +99,36 @@ FROM golang:1.26.6 AS tools
 EOF
 run_test "conflicting golang tags in one Dockerfile" 1 "pins more than one golang tag"
 
+# --- lowercase FROM: valid Dockerfile syntax -------------------------------
+reset
+write_go_mod 1.27.0
+write_flake 1.27.0
+cat > Dockerfile <<'EOF'
+from golang:1.26.6 AS builder
+EOF
+run_test "lowercase from is not skipped" 1 "Dockerfile 1.26.6"
+
+# --- indented FROM: leading whitespace is ignored by Docker ----------------
+reset
+write_go_mod 1.27.0
+write_flake 1.27.0
+cat > Dockerfile <<'EOF'
+  FROM golang:1.26.6 AS builder
+EOF
+run_test "indented FROM is not skipped" 1 "Dockerfile 1.26.6"
+
+# --- a go directive that cannot be parsed is an error, not a skip ----------
+reset
+write_flake 1.27.0
+printf 'module example.com/x\n\ngo 1.27.0 // pinned\n' > go.mod
+run_test "unparseable go directive" 1 "cannot read a Go version from the go directive"
+
+# --- a goVersion that is not patch-level is an error, not a skip ----------
+reset
+write_go_mod 1.27.0
+printf '{\n  goVersion = "1.27";\n}\n' > flake.nix
+run_test "non patch-level goVersion" 1 "cannot read a Go version from goVersion"
+
 # --- nothing to check ------------------------------------------------------
 reset
 run_test "no Go pins at all" 0 "nothing to check"
