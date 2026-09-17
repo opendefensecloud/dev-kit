@@ -121,8 +121,13 @@ some of them fails in a workflow that does not mention the file that is wrong:
 | `Dockerfile` | `FROM ... golang:<tag>`    | the build image            |
 
 `check-go-version` asserts they agree, skipping any file the repository does not
-have — a library without a `Dockerfile` still passes. Override `GO_MOD`,
-`FLAKE_NIX` or `DOCKERFILE` for a non-default layout.
+have — a library without a `Dockerfile` still passes. **Every tracked Dockerfile
+is read**, not just the one at the root, so adding one does not mean remembering
+to register it. Override `GO_MOD`, `FLAKE_NIX` or `DOCKERFILE` (a space-separated
+list) for a non-default layout.
+
+A file that exists but whose pin cannot be parsed is an error, never a skip —
+silently ignoring it is the same drift the check exists to catch.
 
 The Docker tag must be **patch-level** (`1.27.0`, not `1.27`). A minor-level tag
 never compares equal to the other two, and Renovate cannot fold it into the same

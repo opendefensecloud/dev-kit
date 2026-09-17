@@ -35,7 +35,7 @@ run_test() {
 }
 
 reset() {
-  rm -f go.mod flake.nix Dockerfile
+  rm -rf go.mod flake.nix Dockerfile examples
 }
 
 write_go_mod()    { printf 'module example.com/x\n\ngo %s\n' "$1" > go.mod; }
@@ -97,7 +97,7 @@ cat > Dockerfile <<'EOF'
 FROM --platform=$BUILDPLATFORM golang:1.27.0 AS builder
 FROM golang:1.26.6 AS tools
 EOF
-run_test "conflicting golang tags in one Dockerfile" 1 "pins more than one Go version"
+run_test "conflicting golang tags in one Dockerfile" 1 "pin more than one Go version"
 
 # --- variant tags: the version is what has to agree, not the base image -----
 reset
@@ -157,6 +157,23 @@ reset
 write_go_mod 1.27.0
 printf '{\n  goVersion = "1.27";\n}\n' > flake.nix
 run_test "non patch-level goVersion" 1 "cannot read a Go version from goVersion"
+
+# --- a second Dockerfile is found without being listed ---------------------
+reset
+write_go_mod 1.27.0
+write_flake 1.27.0
+write_dockerfile 1.27.0
+mkdir -p examples/ocm
+printf 'FROM golang:1.26.6 AS tools\n' > examples/ocm/Dockerfile
+run_test "second Dockerfile is discovered" 1 "pin more than one Go version"
+
+reset
+write_go_mod 1.27.0
+write_flake 1.27.0
+write_dockerfile 1.27.0
+mkdir -p examples/ocm
+printf 'FROM alpine:3\n' > examples/ocm/Dockerfile
+run_test "second Dockerfile without a golang base is ignored" 0 "Go version pins agree: 1.27.0"
 
 # --- nothing to check ------------------------------------------------------
 reset

@@ -206,7 +206,9 @@ $(CHECK_GO_VERSION): | $(LOCALBIN)
 # files; an absent file is skipped rather than failing.
 GO_MOD ?= $(BUILD_PATH)/go.mod
 FLAKE_NIX ?= $(BUILD_PATH)/flake.nix
-DOCKERFILE ?= $(BUILD_PATH)/Dockerfile
+# Empty by default: the script then reads every tracked Dockerfile. Set this to
+# a space-separated list to override.
+DOCKERFILE ?=
 
 .PHONY: check-go-version
 check-go-version: $(CHECK_GO_VERSION) ## Assert go.mod, flake.nix and the Dockerfile pin the same Go version
