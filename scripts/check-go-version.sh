@@ -88,18 +88,32 @@ if [ -f "$DOCKERFILE" ]; then
         print image
       }
     }' "$DOCKERFILE" | sort -u)
-  if [ "${#tags[@]}" -gt 1 ]; then
-    echo "error: $DOCKERFILE pins more than one golang tag: ${tags[*]}" >&2
-    exit 1
-  fi
-  if [ "${#tags[@]}" -eq 1 ]; then
-    record "Dockerfile" "${tags[0]}" "$DOCKERFILE"
-    if ! [[ "${tags[0]}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-      echo "error: $DOCKERFILE pins golang:${tags[0]} — a patch-level tag is required." >&2
+  # Official golang tags carry an optional OS/variant suffix — 1.27.1,
+  # 1.27.1-alpine, 1.27.1-alpine3.22, 1.27-bookworm. Compare on the version
+  # part only; which base image a stage wants is not this check's business.
+  docker_version=""
+  for tag in "${tags[@]}"; do
+    if [[ "$tag" =~ ^([0-9]+\.[0-9]+\.[0-9]+)(-.+)?$ ]]; then
+      v="${BASH_REMATCH[1]}"
+    elif [[ "$tag" =~ ^[0-9]+\.[0-9]+(-.+)?$ ]]; then
+      echo "error: $DOCKERFILE pins golang:$tag — a patch-level tag is required." >&2
       echo "       A minor-level tag never matches go.mod or flake.nix, and Renovate" >&2
       echo "       cannot group it with the other Go pins, so the image stays behind." >&2
       exit 1
+    else
+      echo "error: cannot read a Go version from the golang tag in $DOCKERFILE: golang:$tag" >&2
+      echo "       Expected a patch-level version with an optional variant suffix," >&2
+      echo "       as in: golang:1.27.1 or golang:1.27.1-alpine3.22" >&2
+      exit 1
     fi
+    if [ -n "$docker_version" ] && [ "$v" != "$docker_version" ]; then
+      echo "error: $DOCKERFILE pins more than one Go version: ${tags[*]}" >&2
+      exit 1
+    fi
+    docker_version="$v"
+  done
+  if [ -n "$docker_version" ]; then
+    record "Dockerfile" "$docker_version" "$DOCKERFILE"
   fi
 fi
 
