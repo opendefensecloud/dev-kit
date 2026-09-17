@@ -5,7 +5,7 @@
 #
 #   go.mod      `go <version>`                  the language version
 #   flake.nix   `goVersion = "<version>";`      the dev shell and CI toolchain
-#   Dockerfile  `FROM ... golang:<tag>`         the build image
+#   Dockerfile  `FROM ... golang:<tag>`         the build image — every tracked one
 #
 # Disagreement between them is the failure mode behind every Go bump: Renovate
 # updates some of the pins, and CI then fails somewhere else entirely with an
@@ -18,7 +18,17 @@ set -euo pipefail
 
 GO_MOD="${GO_MOD:-go.mod}"
 FLAKE_NIX="${FLAKE_NIX:-flake.nix}"
-DOCKERFILE="${DOCKERFILE:-Dockerfile}"
+
+# Every tracked Dockerfile is read, so adding one does not mean remembering to
+# add it here too. DOCKERFILE overrides that with a space-separated list.
+if [ -n "${DOCKERFILE:-}" ]; then
+  read -r -a dockerfiles <<< "$DOCKERFILE"
+else
+  mapfile -t dockerfiles < <(
+    git ls-files -- '*Dockerfile' '*Dockerfile.*' '*.Dockerfile' 2>/dev/null ||
+      find . -name '*Dockerfile*' -not -path './bin/*' -print 2>/dev/null
+  )
+fi
 
 labels=()
 versions=()
@@ -70,10 +80,17 @@ if [ -f "$FLAKE_NIX" ]; then
   fi
 fi
 
-# Dockerfile — every `golang:<tag>` builder stage, digest suffix stripped.
+# Dockerfiles — every `golang:<tag>` builder stage, digest suffix stripped.
 # Instruction keywords are case-insensitive and leading whitespace is ignored,
 # so `from golang:…` and an indented `FROM` are valid and must be seen.
-if [ -f "$DOCKERFILE" ]; then
+#
+# Official golang tags carry an optional OS/variant suffix — 1.27.1,
+# 1.27.1-alpine, 1.27.1-alpine3.22, 1.27-bookworm. Compare on the version part
+# only; which base image a stage wants is not this check's business.
+docker_version=""
+docker_file=""
+for df in "${dockerfiles[@]}"; do
+  [ -f "$df" ] || continue
   mapfile -t tags < <(awk '
     toupper($1) == "FROM" {
       image = ""
@@ -87,38 +104,37 @@ if [ -f "$DOCKERFILE" ]; then
         sub(/@.*/, "", image)
         print image
       }
-    }' "$DOCKERFILE" | sort -u)
-  # Official golang tags carry an optional OS/variant suffix — 1.27.1,
-  # 1.27.1-alpine, 1.27.1-alpine3.22, 1.27-bookworm. Compare on the version
-  # part only; which base image a stage wants is not this check's business.
-  docker_version=""
+    }' "$df" | sort -u)
   for tag in "${tags[@]}"; do
     if [[ "$tag" =~ ^([0-9]+\.[0-9]+\.[0-9]+)(-.+)?$ ]]; then
       v="${BASH_REMATCH[1]}"
     elif [[ "$tag" =~ ^[0-9]+\.[0-9]+(-.+)?$ ]]; then
-      echo "error: $DOCKERFILE pins golang:$tag — a patch-level tag is required." >&2
+      echo "error: $df pins golang:$tag — a patch-level tag is required." >&2
       echo "       A minor-level tag never matches go.mod or flake.nix, and Renovate" >&2
       echo "       cannot group it with the other Go pins, so the image stays behind." >&2
       exit 1
     else
-      echo "error: cannot read a Go version from the golang tag in $DOCKERFILE: golang:$tag" >&2
+      echo "error: cannot read a Go version from the golang tag in $df: golang:$tag" >&2
       echo "       Expected a patch-level version with an optional variant suffix," >&2
       echo "       as in: golang:1.27.1 or golang:1.27.1-alpine3.22" >&2
       exit 1
     fi
     if [ -n "$docker_version" ] && [ "$v" != "$docker_version" ]; then
-      echo "error: $DOCKERFILE pins more than one Go version: ${tags[*]}" >&2
+      echo "error: Dockerfiles pin more than one Go version:" >&2
+      printf '       %-40s %s\n' "$docker_file" "$docker_version" >&2
+      printf '       %-40s %s\n' "$df" "$v" >&2
       exit 1
     fi
     docker_version="$v"
+    docker_file="$df"
   done
-  if [ -n "$docker_version" ]; then
-    record "Dockerfile" "$docker_version" "$DOCKERFILE"
-  fi
+done
+if [ -n "$docker_version" ]; then
+  record "Dockerfile" "$docker_version" "$docker_file"
 fi
 
 if [ "${#versions[@]}" -eq 0 ]; then
-  echo "note: no Go version pins found in $GO_MOD, $FLAKE_NIX or $DOCKERFILE — nothing to check" >&2
+  echo "note: no Go version pins found in $GO_MOD, $FLAKE_NIX or any Dockerfile — nothing to check" >&2
   exit 0
 fi
 
