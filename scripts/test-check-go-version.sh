@@ -97,7 +97,36 @@ cat > Dockerfile <<'EOF'
 FROM --platform=$BUILDPLATFORM golang:1.27.0 AS builder
 FROM golang:1.26.6 AS tools
 EOF
-run_test "conflicting golang tags in one Dockerfile" 1 "pins more than one golang tag"
+run_test "conflicting golang tags in one Dockerfile" 1 "pins more than one Go version"
+
+# --- variant tags: the version is what has to agree, not the base image -----
+reset
+write_go_mod 1.25.7
+write_flake 1.25.7
+write_dockerfile 1.25.7-alpine3.22
+run_test "variant tag agrees on the version" 0 "Go version pins agree: 1.25.7"
+
+reset
+write_go_mod 1.26.6
+write_flake 1.26.6
+write_dockerfile 1.26-alpine
+run_test "minor-level variant tag is rejected" 1 "a patch-level tag is required"
+
+reset
+write_go_mod 1.27.0
+write_flake 1.27.0
+write_dockerfile latest
+run_test "non-version tag is rejected" 1 "cannot read a Go version from the golang tag"
+
+# --- two stages, same version, different base ------------------------------
+reset
+write_go_mod 1.27.0
+write_flake 1.27.0
+cat > Dockerfile <<'EOF'
+FROM --platform=$BUILDPLATFORM golang:1.27.0 AS builder
+FROM golang:1.27.0-alpine3.22 AS tools
+EOF
+run_test "same version, different variants" 0 "Go version pins agree: 1.27.0"
 
 # --- lowercase FROM: valid Dockerfile syntax -------------------------------
 reset
