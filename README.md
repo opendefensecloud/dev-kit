@@ -28,6 +28,7 @@ The included `common.mk` provides:
 | `setup-local-cluster`       | Create a Kind cluster for local development                |
 | `repo-settings`             | Reconcile GitHub repository settings                       |
 | `envtest-binaries-sideload` | Populate the envtest cache from upstream K8s/etcd releases |
+| `check-go-version`          | Assert every Go version pin in the repository agrees        |
 
 ### Variables
 
@@ -107,6 +108,35 @@ Set `ENVTEST_K8S_VERSION` in your own `Makefile`; `common.mk` does not default
 it. Linux downloads prebuilt binaries; macOS builds `kube-apiserver` from source
 when controller-tools has no archive for the requested version, which also needs
 `go` on `PATH` — supplied by `goVersion`, not by the default dev shell.
+
+### Go version consistency
+
+A Go project pins its version in up to three places, and a bump that updates only
+some of them fails in a workflow that does not mention the file that is wrong:
+
+| File         | Pin                        | What it drives             |
+| ---          | ---                        | ---                        |
+| `go.mod`     | `go <version>`             | the language version       |
+| `flake.nix`  | `goVersion = "<version>";` | the dev shell and CI       |
+| `Dockerfile` | `FROM ... golang:<tag>`    | the build image            |
+
+`check-go-version` asserts they agree, skipping any file the repository does not
+have — a library without a `Dockerfile` still passes. **Every tracked Dockerfile
+is read**, not just the one at the root, so adding one does not mean remembering
+to register it. Override `GO_MOD`, `FLAKE_NIX` or `DOCKERFILE` (a space-separated
+list) for a non-default layout.
+
+A file that exists but whose pin cannot be parsed is an error, never a skip —
+silently ignoring it is the same drift the check exists to catch.
+
+The Docker tag must be **patch-level** (`1.27.0`, not `1.27`). A minor-level tag
+never compares equal to the other two, and Renovate cannot fold it into the same
+update group, so the image silently stays behind while everything else moves.
+
+Related: the dev shell resolves `goVersion` from `go-overlay`, which `flake.lock`
+pins. A Go patch released after that lock was written does not exist in the shell
+yet; the shell says so and names the fix (`nix flake update go-overlay`) rather
+than failing with a missing attribute.
 
 ### Repository settings
 

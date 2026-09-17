@@ -96,7 +96,25 @@
         '' + shellHook;
 
         packages = defaultPkgs ++ packages ++ lib.optionals (goVersion != null) [
-          pkgs.go-bin.versions.${goVersion}
+          # go-overlay only carries versions it has a manifest for, and the
+          # overlay is pinned by flake.lock — so a freshly released Go patch
+          # does not exist here until the lock is refreshed. Without this the
+          # failure is `attribute '1.27.1' missing`, which points at the
+          # overlay's internals rather than at the fix, and it takes down every
+          # workflow at shell-evaluation time before any job runs.
+          (pkgs.go-bin.versions.${goVersion} or (throw ''
+            dev-kit: Go ${goVersion} is not in the locked go-overlay.
+            Available ${lib.versions.majorMinor goVersion}.x: ${
+              let
+                inMinor = builtins.filter
+                  (v: lib.hasPrefix (lib.versions.majorMinor goVersion + ".") v)
+                  (builtins.attrNames pkgs.go-bin.versions);
+              in
+                if inMinor == [] then "none" else lib.concatStringsSep ", " inMinor
+            }
+            Either refresh the overlay:  nix flake update go-overlay
+            or set goVersion to a version listed above.
+          ''))
           pkgs.gotools
         ];
       };

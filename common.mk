@@ -193,6 +193,28 @@ envtest-binaries-sideload: $(SETUP_ENVTEST) $(ENVTEST_SIDELOAD) ## Populate the 
 	@SETUP_ENVTEST=$(SETUP_ENVTEST) BIN_DIR=$(LOCALBIN) YQ=$(YQ) \
 		bash $(ENVTEST_SIDELOAD) $(ENVTEST_K8S_VERSION)
 
+# Cached rather than piped to bash like repo-settings: this runs on the lint
+# path, so it must not reach the network on every invocation.
+CHECK_GO_VERSION := $(LOCALBIN)/check-go-version-$(subst /,~,$(DEV_KIT_VERSION)).sh
+$(CHECK_GO_VERSION): | $(LOCALBIN)
+	@curl --fail -sSL \
+		"https://raw.githubusercontent.com/opendefensecloud/dev-kit/$(DEV_KIT_VERSION)/scripts/check-go-version.sh" \
+		-o $@.download
+	@mv $@.download $@
+
+# Overridable so a repository with a non-default layout can point at its own
+# files; an absent file is skipped rather than failing.
+GO_MOD ?= $(BUILD_PATH)/go.mod
+FLAKE_NIX ?= $(BUILD_PATH)/flake.nix
+# Empty by default: the script then reads every tracked Dockerfile. Set this to
+# a space-separated list to override.
+DOCKERFILE ?=
+
+.PHONY: check-go-version
+check-go-version: $(CHECK_GO_VERSION) ## Assert go.mod, flake.nix and the Dockerfile pin the same Go version
+	@GO_MOD='$(GO_MOD)' FLAKE_NIX='$(FLAKE_NIX)' DOCKERFILE='$(DOCKERFILE)' \
+		bash $(CHECK_GO_VERSION)
+
 # Install local tools
 TOOL_LOCK := $(BUILD_PATH)/tools.lock
 
