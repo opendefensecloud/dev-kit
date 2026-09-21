@@ -49,8 +49,12 @@
         kind
         kubectl
         kubernetes-helm
+        mdformat
         shellcheck
+        shfmt
+        treefmt
         unzip
+        yamlfmt
         yq-go
       ];
 

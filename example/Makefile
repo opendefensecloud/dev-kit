@@ -18,7 +18,3 @@ cobra: $(COBRA)
 
 scan:
 	echo hello
-
-fmt: # FIXME(user): Implement the fmt target or disable the pre-commit hook for it (flake.nix)
-
-lint: # FIXME(user): Implement the lint target or disable the pre-commit hook for it (flake.nix)
