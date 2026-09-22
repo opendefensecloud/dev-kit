@@ -9,9 +9,12 @@ name: renovate-auto-approve
 #         pull-requests: write
 #
 # It approves a Renovate PR that carries the automerge label and not the block
-# label (security). If a PR later gains the block label, it revokes its own
-# earlier approval so a human is required again. The merge itself always stays
-# gated on the repo's required status checks.
+# label (security), and only while the branch still holds exactly one commit,
+# authored by Renovate and signed. Once anyone pushes onto the branch the PR
+# stops qualifying, because those changes were never reviewed by anyone.
+# If a PR later gains the block label, the workflow revokes its own earlier
+# approval so a human is required again. The merge itself always stays gated on
+# the repo's required status checks.
 #
 # Which update types are eligible (the automerge label) is decided by the
 # renovate-config presets, not here: github>opendefensecloud/renovate-config.
@@ -48,7 +51,7 @@ jobs:
       (contains(github.event.pull_request.labels.*.name, inputs.automerge-label) ||
        contains(github.event.pull_request.labels.*.name, inputs.block-label))
     steps:
-      - name: Approve, or revoke a prior approval if the block label appears
+      - name: Approve an unmodified Renovate PR, or revoke a prior approval
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -56,6 +59,7 @@ jobs:
           LABEL: ${{ inputs.automerge-label }}
           BLOCK_LABEL: ${{ inputs.block-label }}
           HAS_BLOCK: ${{ contains(github.event.pull_request.labels.*.name, inputs.block-label) }}
+          RENOVATE_ACTOR: ${{ inputs.renovate-actor }}
         run: |
           set -euo pipefail
           # Latest review state left by this workflow's identity (github-actions[bot]).
@@ -69,6 +73,17 @@ jobs:
             else
               echo "PR carries the $BLOCK_LABEL label; no automated approval to revoke."
             fi
+            exit 0
+          fi
+          # The job-level gate only checks who opened the PR. Also check that
+          # Renovate is the only contributor to the branch, that it pushed
+          # exactly one commit, and that the commit is signed.
+          commits=$(gh api "repos/$GH_REPO/pulls/$PR_NUMBER/commits")
+          if ! jq -e --arg actor "$RENOVATE_ACTOR" '
+                 length == 1 and .[0].author.login == $actor
+                 and .[0].commit.verification.verified == true' <<<"$commits" >/dev/null; then
+            echo "Not approving: the branch must hold exactly one signed $RENOVATE_ACTOR commit," \
+                 "but it has more than one commit, or its commit is unsigned or not from $RENOVATE_ACTOR."
             exit 0
           fi
           if [ "$latest_state" = "APPROVED" ]; then
