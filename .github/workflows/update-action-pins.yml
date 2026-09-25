@@ -27,9 +27,11 @@ jobs:
           # before matching so single- and double-quoted values are both handled,
           # and allow any YAML sequence spacing: `-   uses:` is valid YAML, and a
           # matcher expecting exactly one space would let an unpinned action
-          # through unseen.
+          # through unseen. Drop trailing comments, or `@main # @<sha>` would
+          # pass on the SHA in the comment.
           unpinned=$(grep -rhE '^[[:space:]]*(-[[:space:]]+)?uses:' .github/ \
             | tr -d "\"'" \
+            | sed -E 's/[[:space:]]+#.*$//' \
             | grep -vE 'uses:[[:space:]]*\./' \
             | grep -vE '@[0-9a-f]{40}([[:space:]]|$)' || true)
           if [[ -n "$unpinned" ]]; then
