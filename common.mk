@@ -95,7 +95,6 @@ repo-settings: ## Reconcile GitHub repository settings (labels, merge strategy, 
 		REPO_REQUIRE_LAST_PUSH_APPROVAL='$(REPO_REQUIRE_LAST_PUSH_APPROVAL)' \
 		REPO_RULESET_BRANCHES='$(REPO_RULESET_BRANCHES)' \
 		REPO_STATUS_CHECKS='$(REPO_STATUS_CHECKS)' \
-		DEV_KIT_VERSION='$(DEV_KIT_VERSION)' \
 		GH='$(GH)' JQ='$(JQ)' \
 		bash
 

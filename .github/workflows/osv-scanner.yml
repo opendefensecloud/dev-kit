@@ -1,0 +1,43 @@
+name: OSV-Scanner
+
+# Reusable only. The caller's stub carries the triggers (pull_request,
+# merge_group, push to main, a weekly schedule); its event decides which job
+# runs. See "Governance workflows" in the README.
+
+on:
+  workflow_call:
+    inputs:
+      scan-args:
+        description: Arguments passed to osv-scanner, one per line, e.g. add `--config ./.osv-scanner.toml`.
+        type: string
+        default: |-
+          --include-git-root
+          -r
+          ./
+
+# Least privilege by default. The write permission needed to upload the SARIF
+# report is granted per job, not here -- a top-level write permission is what
+# OpenSSF Scorecard's Token-Permissions check flags.
+permissions:
+  contents: read
+
+jobs:
+  scan-scheduled:
+    if: ${{ github.event_name == 'push' || github.event_name == 'schedule' }}
+    permissions:
+      # Required to upload SARIF file to CodeQL. See: https://github.com/github/codeql-action/issues/2117
+      actions: read
+      security-events: write
+      contents: read
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
+    with:
+      scan-args: ${{ inputs.scan-args }}
+  scan-pr:
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
+    permissions:
+      actions: read
+      security-events: write
+      contents: read
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
+    with:
+      scan-args: ${{ inputs.scan-args }}

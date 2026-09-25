@@ -5,11 +5,13 @@ on:
     paths:
       - '.github/actions/**/*.sh'
       - 'scripts/*.sh'
+      - '.github/workflows/update-action-pins.yml'
   push:
     branches: [main]
     paths:
       - '.github/actions/**/*.sh'
       - 'scripts/*.sh'
+      - '.github/workflows/update-action-pins.yml'
 
 permissions:
   contents: read
@@ -31,3 +33,5 @@ jobs:
         run: .github/actions/diff-check/test-verify-clean.sh
       - name: Test extract-go-version.sh
         run: .github/actions/get-go-version/test-extract-go-version.sh
+      - name: Test the update-action-pins check
+        run: scripts/test-update-action-pins.sh
