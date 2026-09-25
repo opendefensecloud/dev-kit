@@ -184,7 +184,7 @@ them together with `DEV_KIT_VERSION`.
 | ---                         | ---                                                    | ---                             |
 | `update-action-pins.yml`    | `pull_request`                                         |                                 |
 | `conventional-commits.yml`  | `pull_request` (opened, edited, synchronize, reopened) | `.commitlintrc.yml` in the repo |
-| `osv-scanner.yml`           | `pull_request`, `merge_group`, `push` to main, weekly  | optional `scan-args` input      |
+| `osv-scanner.yml`           | `pull_request`, `push` to main, weekly                 | optional `scan-args` input      |
 | `issues-add-labels.yaml`    | `issues` (opened, reopened)                            |                                 |
 | `issues-add-to-project.yml` | `issues`, `pull_request` (opened)                      | `ADD_TO_PROJECT_PAT` secret     |
 | `renovate-auto-approve.yml` | `pull_request`                                         | see the header of the workflow  |
@@ -224,8 +224,6 @@ name: OSV-Scanner
 on:
   pull_request:
     branches: ["main"]
-  merge_group:
-    types: [checks_requested]
   schedule:
     - cron: "12 12 * * 1"
   push:
