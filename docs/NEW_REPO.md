@@ -104,7 +104,7 @@ preCommitHooks = {
 
 ### Renovate auto-approve (optional)
 
-To let Renovate auto-merge digest, patch, and minor PRs without a manual approval, copy `example/.github/workflows/renovate-auto-approve.yml` into your project and pin the `uses:` ref to a dev-kit release tag or commit SHA. It calls dev-kit's reusable `renovate-auto-approve.yml`, which approves Renovate PRs labeled `automerge` and skips (and revokes) anything labeled `security`. It approves a PR only while the branch is still exactly one signed Renovate commit that Renovate itself pushed, so pushing onto a Renovate branch, including amending or rebasing its commit, revokes the automated approval and hands the review back to a human.
+To let Renovate auto-merge digest, patch, and minor PRs without a manual approval, copy `example/.github/workflows/renovate-auto-approve.yml` into your project and pin the `uses:` ref to a dev-kit release tag or commit SHA. It calls dev-kit's reusable `renovate-auto-approve.yml`, which approves Renovate PRs labeled `automerge` by Renovate itself and skips (and revokes) anything labeled `security`. It approves a PR only while the branch is still exactly one signed Renovate commit that Renovate itself pushed, so pushing onto a Renovate branch, including amending or rebasing its commit, revokes the automated approval and hands the review back to a human.
 
 Two more things are needed:
 

@@ -9,9 +9,10 @@ name: renovate-auto-approve
 #         contents: read
 #         pull-requests: write
 #
-# It approves a Renovate PR that carries the automerge label and not the block
-# label (security), and only while the branch still holds exactly one commit,
-# authored by Renovate and signed, and pushed by Renovate. Once someone pushes
+# It approves a Renovate PR that carries the automerge label, added by Renovate,
+# and not the block label (security), and only while the branch still holds
+# exactly one commit, authored by Renovate and signed, and pushed by Renovate.
+# Once someone pushes
 # onto the branch it stops qualifying, because that change was never reviewed by
 # anyone. If a PR stops qualifying or later gains the block label, the workflow
 # revokes its own earlier approval so a human is required again. The merge
@@ -78,26 +79,45 @@ jobs:
             fi
             exit 0
           fi
-          # The job-level gate only checks who opened the PR. Also check that
-          # the branch holds exactly one commit, authored by Renovate, signed, and
-          # pushed by Renovate.
-          commits=$(gh api -X GET "repos/$GH_REPO/pulls/$PR_NUMBER/commits" -f per_page=2)
-          activity=$(gh api -X GET "repos/$GH_REPO/activity" -f ref="refs/heads/$HEAD_REF" -f per_page=1)
-          if ! jq -e -n --arg actor "$RENOVATE_ACTOR" --argjson commits "$commits" --argjson activity "$activity" '
-                 ($commits | length) == 1
-                 and $commits[0].author.login == $actor
-                 and $commits[0].commit.verification.verified == true
-                 and $activity[0].after == $commits[0].sha
-                 and $activity[0].actor.login == $actor' >/dev/null; then
-            echo "Not approving: the branch must hold exactly one signed $RENOVATE_ACTOR commit, pushed by $RENOVATE_ACTOR," \
-                 "but it has more than one commit, or its commit is unsigned, not from $RENOVATE_ACTOR, or pushed by someone else."
+          # Stops without approving, and revokes an earlier automated approval.
+          reject() {
+            echo "Not approving: $1."
             # Dismiss a stale approval
             if [ "$latest_state" = "APPROVED" ]; then
               echo "Revoking the earlier automated approval."
               gh pr review "$PR_NUMBER" --request-changes \
-                --body "Revoked: the branch is no longer a single signed commit pushed by \`$RENOVATE_ACTOR\` and needs a human review."
+                --body "Revoked: $1. This PR needs a human review."
             fi
             exit 0
+          }
+          # The job-level gate only checks who opened the PR. Also check that
+          # the branch holds exactly one commit, authored by Renovate, signed, and
+          # pushed by Renovate, and that Renovate itself added the automerge label.
+          commits=$(gh api -X GET "repos/$GH_REPO/pulls/$PR_NUMBER/commits" -f per_page=2)
+          if [ "$(jq 'length' <<<"$commits")" != 1 ]; then
+            reject "the branch holds more than one commit"
+          fi
+          head_sha=$(jq -r '.[0].sha' <<<"$commits")
+          author=$(jq -r '.[0].author.login // empty' <<<"$commits")
+          if [ "$author" != "$RENOVATE_ACTOR" ]; then
+            reject "commit $head_sha is authored by '${author:-unknown}', not $RENOVATE_ACTOR"
+          fi
+          if [ "$(jq -r '.[0].commit.verification.verified' <<<"$commits")" != true ]; then
+            reject "commit $head_sha is not signed"
+          fi
+          activity=$(gh api -X GET "repos/$GH_REPO/activity" -f ref="refs/heads/$HEAD_REF" -f per_page=1)
+          if [ "$(jq -r '.[0].after // empty' <<<"$activity")" != "$head_sha" ]; then
+            reject "the latest push to $HEAD_REF is not the push of commit $head_sha"
+          fi
+          pusher=$(jq -r '.[0].actor.login // empty' <<<"$activity")
+          if [ "$pusher" != "$RENOVATE_ACTOR" ]; then
+            reject "commit $head_sha was pushed by '$pusher', not $RENOVATE_ACTOR"
+          fi
+          # Events come oldest first; keep who added the automerge label last.
+          labeler=$(gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/events" \
+            --jq '.[] | select(.event == "labeled" and .label.name == env.LABEL) | .actor.login' | tail -n 1)
+          if [ "$labeler" != "$RENOVATE_ACTOR" ]; then
+            reject "the $LABEL label was added by '$labeler', not $RENOVATE_ACTOR"
           fi
           if [ "$latest_state" = "APPROVED" ]; then
             echo "Already approved by github-actions; nothing to do."
