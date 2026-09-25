@@ -188,6 +188,7 @@ them together with `DEV_KIT_VERSION`.
 | `issues-add-labels.yaml`    | `issues` (opened, reopened)                            |                                 |
 | `issues-add-to-project.yml` | `issues`, `pull_request` (opened)                      | `ADD_TO_PROJECT_PAT` secret     |
 | `renovate-auto-approve.yml` | `pull_request`                                         | see the header of the workflow  |
+| `renovate-dev-kit-lock.yml` | `pull_request` (opened, synchronize, reopened)         | `DEV_KIT_APP_*` org secrets     |
 
 `.github/workflows/update-action-pins.yml`:
 
@@ -278,6 +279,27 @@ jobs:
     uses: opendefensecloud/dev-kit/.github/workflows/issues-add-to-project.yml@<40-char-sha> # <tag>
     secrets:
       ADD_TO_PROJECT_PAT: ${{ secrets.ADD_TO_PROJECT_PAT }}
+```
+
+`.github/workflows/renovate-dev-kit-lock.yml` commits `nix flake update dev-kit`
+to Renovate's `renovate/dev-kit` PR, which bumps the flake input tag but can't
+update `flake.lock`. It commits as the org's dev-kit GitHub App, so the commit
+is signed and starts CI; any other PR skips it:
+
+```yaml
+name: Relock dev-kit
+on:
+  pull_request:
+    branches: ["main"]
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+jobs:
+  relock:
+    uses: opendefensecloud/dev-kit/.github/workflows/renovate-dev-kit-lock.yml@<40-char-sha> # <tag>
+    secrets:
+      DEV_KIT_APP_CLIENT_ID: ${{ secrets.DEV_KIT_APP_CLIENT_ID }}
+      DEV_KIT_APP_PRIVATE_KEY: ${{ secrets.DEV_KIT_APP_PRIVATE_KEY }}
 ```
 
 A job from a reusable workflow reports as `<stub job> / <called job>`, so
