@@ -6,15 +6,16 @@ name: renovate-auto-approve
 #     approve:
 #       uses: opendefensecloud/dev-kit/.github/workflows/renovate-auto-approve.yml@<sha-or-tag>
 #       permissions:
+#         contents: read
 #         pull-requests: write
 #
 # It approves a Renovate PR that carries the automerge label and not the block
 # label (security), and only while the branch still holds exactly one commit,
-# authored by Renovate and signed. Once anyone pushes onto the branch the PR
-# stops qualifying, because those changes were never reviewed by anyone.
-# If a PR later gains the block label, the workflow revokes its own earlier
-# approval so a human is required again. The merge itself always stays gated on
-# the repo's required status checks.
+# authored by Renovate and signed, and pushed by Renovate. Once someone pushes
+# onto the branch it stops qualifying, because that change was never reviewed by
+# anyone. If a PR stops qualifying or later gains the block label, the workflow
+# revokes its own earlier approval so a human is required again. The merge
+# itself always stays gated on the repo's required status checks.
 #
 # Which update types are eligible (the automerge label) is decided by the
 # renovate-config presets, not here: github>opendefensecloud/renovate-config.
@@ -36,6 +37,7 @@ on:
         default: renovate[bot]
 
 permissions:
+  contents: read # repository activity API, to see who pushed the head
   pull-requests: write
 
 concurrency:
@@ -56,6 +58,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
           LABEL: ${{ inputs.automerge-label }}
           BLOCK_LABEL: ${{ inputs.block-label }}
           HAS_BLOCK: ${{ contains(github.event.pull_request.labels.*.name, inputs.block-label) }}
@@ -76,14 +79,24 @@ jobs:
             exit 0
           fi
           # The job-level gate only checks who opened the PR. Also check that
-          # Renovate is the only contributor to the branch, that it pushed
-          # exactly one commit, and that the commit is signed.
-          commits=$(gh api "repos/$GH_REPO/pulls/$PR_NUMBER/commits")
-          if ! jq -e --arg actor "$RENOVATE_ACTOR" '
-                 length == 1 and .[0].author.login == $actor
-                 and .[0].commit.verification.verified == true' <<<"$commits" >/dev/null; then
-            echo "Not approving: the branch must hold exactly one signed $RENOVATE_ACTOR commit," \
-                 "but it has more than one commit, or its commit is unsigned or not from $RENOVATE_ACTOR."
+          # the branch holds exactly one commit, authored by Renovate, signed, and
+          # pushed by Renovate.
+          commits=$(gh api -X GET "repos/$GH_REPO/pulls/$PR_NUMBER/commits" -f per_page=2)
+          activity=$(gh api -X GET "repos/$GH_REPO/activity" -f ref="refs/heads/$HEAD_REF" -f per_page=1)
+          if ! jq -e -n --arg actor "$RENOVATE_ACTOR" --argjson commits "$commits" --argjson activity "$activity" '
+                 ($commits | length) == 1
+                 and $commits[0].author.login == $actor
+                 and $commits[0].commit.verification.verified == true
+                 and $activity[0].after == $commits[0].sha
+                 and $activity[0].actor.login == $actor' >/dev/null; then
+            echo "Not approving: the branch must hold exactly one signed $RENOVATE_ACTOR commit, pushed by $RENOVATE_ACTOR," \
+                 "but it has more than one commit, or its commit is unsigned, not from $RENOVATE_ACTOR, or pushed by someone else."
+            # Dismiss a stale approval
+            if [ "$latest_state" = "APPROVED" ]; then
+              echo "Revoking the earlier automated approval."
+              gh pr review "$PR_NUMBER" --request-changes \
+                --body "Revoked: the branch is no longer a single signed commit pushed by \`$RENOVATE_ACTOR\` and needs a human review."
+            fi
             exit 0
           fi
           if [ "$latest_state" = "APPROVED" ]; then
