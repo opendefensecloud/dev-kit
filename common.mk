@@ -135,14 +135,40 @@ OSV_SCANNER_CONFIG ?= ./.osv-scanner.toml
 scan: $(OSV_SCANNER)  ## scan for vulnerabilities
 	$(OSV_SCANNER) scan --config $(OSV_SCANNER_CONFIG) -r .
 
+# Files subject to a license header: everything matching `pattern`, minus
+# generated files.
+addlicense_files = git ls-files '$(pattern)' | (xargs -r grep -L -E '^(//|\#) Code generated .* DO NOT EDIT\.$$' || true)
+
+# The SPDX identifier expected in the header, and what addlicense writes for
+# `license=apache`. Override `spdx` should a repository ever use another one.
+spdx ?= Apache-2.0
+
+# addlicense with -check, only ever sees a *missing* header, never an outdated
+# one, and it never inspects the SPDX line at all; 
+# `|| true` because grep -L exits 1 when it selects nothing, which
+# .SHELLFLAGS = -ec would make fatal.
+addlicense_mismatch = $$({ $(addlicense_files) | xargs -r grep -L -F 'Copyright $(comment)' || true; \
+	$(addlicense_files) | xargs -r grep -L -F 'SPDX-License-Identifier: $(spdx)' || true; } | sort -u)
+
 .PHONY: addlicense
 addlicense: $(ADDLICENSE)  ## Add License headers containing of `license` and `comment` to files matched by `pattern`.
 	@test -n "$(license)" && test -n "$(comment)" && test -n "$(pattern)" && \
-		git ls-files '$(pattern)' | xargs -r $(ADDLICENSE) -c '$(comment)' -l '$(license)' -s=only $(extraargs)
+		$(addlicense_files) | xargs -r $(ADDLICENSE) -c '$(comment)' -l '$(license)' -s=only -y '' $(extraargs)
+
+.PHONY: addlicense-list
+addlicense-list:  ## List files matched by `pattern` whose header does not carry `Copyright $(comment)` and `SPDX-License-Identifier: $(spdx)`.
+	@test -n "$(comment)" && test -n "$(pattern)"
+	@files=$(addlicense_mismatch); \
+	if [ -n "$$files" ]; then \
+		echo "Unexpected license header, expected 'Copyright $(comment)' and 'SPDX-License-Identifier: $(spdx)':"; \
+		echo "$$files" | sed 's/^/  /'; \
+	fi
 
 .PHONY: addlicense-check
 addlicense-check:
 	$(MAKE) addlicense extraargs='-check'
+	@$(MAKE) addlicense-list
+	@test -z "$(addlicense_mismatch)"
 
 # Local dev environment
 .PHONY: setup-local-cluster
