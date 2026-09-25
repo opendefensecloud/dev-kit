@@ -1,31 +1,43 @@
 name: Update Action Pins
 
+# Reusable, and also run on dev-kit's own PRs. Consumers call it from a stub;
+# see "Governance workflows" in the README.
+#
+# No `paths` filter on purpose: a required check gated by paths never reports on
+# PRs outside them, so the merge stays blocked.
+
 permissions:
   contents: read
 
 on:
   pull_request:
-    paths:
-      - ".github/workflows/**"
-      - ".github/actions/**"
+  workflow_call:
 
 jobs:
   check-pins:
     name: Check action pins
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
       - name: Verify all actions are pinned to a SHA
         run: |
-          unpinned=$(grep -rhE '^\s+(- )?uses: ' .github/ \
-            | grep -vE "^\s+(- )?uses: ['\"]?\./" \
-            | grep -vE '@[0-9a-f]{40}($|\s)' || true)
+          # Scan all of .github/ so composite actions are covered. Strip quotes
+          # before matching so single- and double-quoted values are both handled,
+          # and allow any YAML sequence spacing: `-   uses:` is valid YAML, and a
+          # matcher expecting exactly one space would let an unpinned action
+          # through unseen. Drop trailing comments, or `@main # @<sha>` would
+          # pass on the SHA in the comment.
+          unpinned=$(grep -rhE '^[[:space:]]*(-[[:space:]]+)?uses:' .github/ \
+            | tr -d "\"'" \
+            | sed -E 's/[[:space:]]+#.*$//' \
+            | grep -vE 'uses:[[:space:]]*\./' \
+            | grep -vE '@[0-9a-f]{40}([[:space:]]|$)' || true)
           if [[ -n "$unpinned" ]]; then
             echo "::error::Found unpinned GitHub Actions (must use SHA digest, not tag):"
             echo "$unpinned"
             echo ""
-            echo "Run 'GITHUB_TOKEN=\$(gh auth token) update-action-pins .github/workflows/ .github/actions/' to fix."
+            echo "Run 'GITHUB_TOKEN=\$(gh auth token) update-action-pins .github/' to fix."
             exit 1
           fi

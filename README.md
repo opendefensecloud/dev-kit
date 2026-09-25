@@ -131,7 +131,7 @@ The repository settings are configurable via make variables (set them in your `M
 | `REPO_REQUIRED_APPROVING_REVIEW_COUNT` | `1`     | Number of approving reviews required to merge                                                                                                                                                                             |
 | `REPO_REQUIRE_CODE_OWNER_REVIEW`       | `false` | Require an approving review from code owners                                                                                                                                                                              |
 | `REPO_REQUIRE_BRANCH_UP_TO_DATE`       | `false` | Require branches to be up to date before merging (needs at least one `REPO_STATUS_CHECKS` value; `repo-settings` fails otherwise)                                                                                         |
-| `REPO_STATUS_CHECKS`                   | `[]`    | JSON array of status-check contexts that must pass (e.g. `["CI","Check action pins"]`); each job name is used as-is, so contexts with spaces work; the `required_status_checks` rule is only added when this is non-empty |
+| `REPO_STATUS_CHECKS`                   | `[]`    | JSON array of status-check contexts that must pass (e.g. `["CI","update-action-pins / Check action pins"]`); each job name is used as-is, so contexts with spaces work; the `required_status_checks` rule is only added when this is non-empty |
 | `REPO_RULESET_BRANCHES`                | `[]`    | JSON array of additional branch patterns the ruleset applies to (e.g. `["release/*"]`); short names are normalized to `refs/heads/...`; the default branch is always protected                                            |
 
 ### GitHub Actions
@@ -172,6 +172,143 @@ jobs:
 | `cachix-name`        | `opendefensecloud` | Cachix cache to use                                                      |
 | `cachix-auth-token`  | `''`               | Auth token; empty falls back to a read-only cache, as on fork PRs        |
 | `cachix-signing-key` | `''`               | Signing key; empty disables pushing to the cache                         |
+
+### Governance workflows
+
+The org-wide checks and automations are reusable workflows. A consuming repo
+keeps one small stub per workflow, which sets the triggers and the permissions
+and calls dev-kit. Pin each stub to a SHA like any other action; Renovate bumps
+them together with `DEV_KIT_VERSION`.
+
+| Workflow                    | Stub triggers                                          | Needs                           |
+| ---                         | ---                                                    | ---                             |
+| `update-action-pins.yml`    | `pull_request`                                         |                                 |
+| `conventional-commits.yml`  | `pull_request` (opened, edited, synchronize, reopened) | `.commitlintrc.yml` in the repo |
+| `osv-scanner.yml`           | `pull_request`, `push` to main, weekly                 | optional `scan-args` input      |
+| `issues-add-labels.yaml`    | `issues` (opened, reopened)                            |                                 |
+| `issues-add-to-project.yml` | `issues`, `pull_request` (opened)                      | `ADD_TO_PROJECT_PAT` secret     |
+| `renovate-auto-approve.yml` | `pull_request`                                         | see the header of the workflow  |
+| `renovate-dev-kit-lock.yml` | `pull_request` (opened, synchronize, reopened)         | `DEV_KIT_APP_*` org secrets     |
+
+`.github/workflows/update-action-pins.yml`:
+
+```yaml
+name: Update Action Pins
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  update-action-pins:
+    uses: opendefensecloud/dev-kit/.github/workflows/update-action-pins.yml@<40-char-sha> # <tag>
+```
+
+`.github/workflows/conventional-commits.yml`:
+
+```yaml
+name: Conventional Commits
+on:
+  pull_request:
+    branches: ["main"]
+    types: [opened, edited, synchronize, reopened]
+permissions:
+  pull-requests: read
+jobs:
+  conventional-commits:
+    uses: opendefensecloud/dev-kit/.github/workflows/conventional-commits.yml@<40-char-sha> # <tag>
+```
+
+`.github/workflows/osv-scanner.yml`:
+
+```yaml
+name: OSV-Scanner
+on:
+  pull_request:
+    branches: ["main"]
+  schedule:
+    - cron: "12 12 * * 1"
+  push:
+    branches: ["main"]
+permissions:
+  contents: read
+jobs:
+  osv-scanner:
+    permissions:
+      actions: read
+      security-events: write
+      contents: read
+    uses: opendefensecloud/dev-kit/.github/workflows/osv-scanner.yml@<40-char-sha> # <tag>
+    # with:
+    #   scan-args: |-
+    #     --include-git-root
+    #     --config ./.osv-scanner.toml
+    #     -r
+    #     ./
+```
+
+`.github/workflows/issues-add-labels.yaml`:
+
+```yaml
+name: Label issues
+on:
+  issues:
+    types: [opened, reopened]
+permissions:
+  contents: read
+jobs:
+  label:
+    permissions:
+      issues: write
+    uses: opendefensecloud/dev-kit/.github/workflows/issues-add-labels.yaml@<40-char-sha> # <tag>
+```
+
+`.github/workflows/issues-add-to-project.yml`:
+
+```yaml
+name: Add issues to project
+on:
+  issues:
+    types: [opened]
+  pull_request:
+    types: [opened]
+permissions:
+  contents: read
+jobs:
+  add-to-project:
+    permissions: {}
+    uses: opendefensecloud/dev-kit/.github/workflows/issues-add-to-project.yml@<40-char-sha> # <tag>
+    secrets:
+      ADD_TO_PROJECT_PAT: ${{ secrets.ADD_TO_PROJECT_PAT }}
+```
+
+`.github/workflows/renovate-dev-kit-lock.yml` commits `nix flake update dev-kit`
+to Renovate's `renovate/dev-kit` PR, which bumps the flake input tag but can't
+update `flake.lock`. It commits as the org's dev-kit GitHub App, so the commit
+is signed and starts CI; any other PR skips it:
+
+```yaml
+name: Relock dev-kit
+on:
+  pull_request:
+    branches: ["main"]
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+jobs:
+  relock:
+    uses: opendefensecloud/dev-kit/.github/workflows/renovate-dev-kit-lock.yml@<40-char-sha> # <tag>
+    secrets:
+      DEV_KIT_APP_CLIENT_ID: ${{ secrets.DEV_KIT_APP_CLIENT_ID }}
+      DEV_KIT_APP_PRIVATE_KEY: ${{ secrets.DEV_KIT_APP_PRIVATE_KEY }}
+```
+
+A job from a reusable workflow reports as `<stub job> / <called job>`, so
+`REPO_STATUS_CHECKS` needs the new names after switching to a stub, e.g.
+`update-action-pins / Check action pins`, `conventional-commits / PR Title` and
+`conventional-commits / Commit Messages`. osv-scanner nests Google's reusable
+workflow one level deeper, so its scan reports as
+`osv-scanner / scan-pr / osv-scan`. Update the list and rerun `make repo-settings` in the same change, or the old
+names stay required and never report.
 
 ### Default git hooks
 

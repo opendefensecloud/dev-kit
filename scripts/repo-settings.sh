@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Reconcile a repository's GitHub settings: labels, merge strategy, secret
-# scanning, branch protection ruleset, and the update-action-pins workflow.
+# scanning and branch protection ruleset.
 #
 # All configuration is passed through environment variables. Defaults are the
 # single source of truth in common.mk and are always passed by the make target;
@@ -18,7 +18,6 @@ set -euo pipefail
 #   REPO_ALLOW_SQUASH_MERGE                allow squash merging
 #   REPO_ALLOW_REBASE_MERGE                allow rebase merging
 #   REPO_REQUIRE_LAST_PUSH_APPROVAL        require the most recent push to be approved before merging
-#   DEV_KIT_VERSION                        dev-kit version to fetch the workflow from
 #   GH, JQ                                 commands used to talk to GitHub and build JSON
 
 "$GH" auth status >/dev/null 2>&1 || {
@@ -157,12 +156,5 @@ else
   "$GH" api "repos/$REPO/rulesets" -X POST --input <(echo "$RULESET_JSON") >/dev/null
   echo "    Created new ruleset"
 fi
-
-echo "  Installing update-action-pins workflow..."
-mkdir -p .github/workflows
-curl --fail -sSL \
-  "https://raw.githubusercontent.com/opendefensecloud/dev-kit/$DEV_KIT_VERSION/.github/workflows/update-action-pins.yml" \
-  -o .github/workflows/update-action-pins.yml
-echo "    Wrote .github/workflows/update-action-pins.yml"
 
 echo "Done."
