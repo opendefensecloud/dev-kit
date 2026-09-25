@@ -1,0 +1,90 @@
+name: renovate-dev-kit-lock
+
+# Reusable only. Commits `nix flake update dev-kit` to Renovate's dev-kit PR.
+# Renovate bumps the flake input tag with a regex manager, which can't update
+# flake.lock; without this, `nix develop` rewrites the lock in CI and any
+# diff-check fails. See "Governance workflows" in the README for the stub.
+#
+# Commits through the GitHub App's installation token, via the API: GitHub
+# signs the commit (required_signatures), and unlike GITHUB_TOKEN it starts CI
+# on the new head. renovate-config lists the app's bot in gitIgnoredAuthors, so
+# Renovate keeps rebasing the branch; each rebase re-runs this and relocks.
+
+on:
+  workflow_call:
+    inputs:
+      branch:
+        description: Renovate's branch for the dev-kit group.
+        type: string
+        default: renovate/dev-kit
+    secrets:
+      DEV_KIT_APP_CLIENT_ID:
+        required: true
+      DEV_KIT_APP_PRIVATE_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  relock:
+    name: Relock dev-kit
+    # Only Renovate's own branch in this repo: fork PRs get no secrets, and a
+    # same-named branch from someone else doesn't get a bot commit.
+    if: >-
+      github.event.pull_request.head.ref == inputs.branch &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login == 'renovate[bot]'
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: renovate-dev-kit-lock-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Install nix
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+        with:
+          # Upstream Nix and no telemetry, as in setup-nix.
+          determinate: false
+          diagnostic-endpoint: ''
+      - name: Relock dev-kit
+        id: relock
+        run: |
+          nix flake update dev-kit
+          if git diff --quiet -- flake.lock; then
+            echo "flake.lock already matches flake.nix"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        if: steps.relock.outputs.changed == 'true'
+        id: app
+        with:
+          client-id: ${{ secrets.DEV_KIT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.DEV_KIT_APP_PRIVATE_KEY }}
+          permission-contents: write
+      - name: Commit flake.lock
+        if: steps.relock.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # createCommitOnBranch, not git push: GitHub signs API commits.
+          # expectedHeadOid makes it fail instead of clobbering a newer push;
+          # that push re-runs this workflow anyway.
+          jq -n --arg repo "$REPO" --arg branch "$BRANCH" --arg head "$HEAD_SHA" \
+            --arg lock "$(base64 -w0 flake.lock)" '{
+              query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
+              variables: { input: {
+                branch: { repositoryNameWithOwner: $repo, branchName: $branch },
+                message: { headline: "chore(deps): relock dev-kit in flake.lock" },
+                expectedHeadOid: $head,
+                fileChanges: { additions: [{ path: "flake.lock", contents: $lock }] }
+              } }
+            }' | gh api graphql --input - --jq '.data.createCommitOnBranch.commit.oid'
