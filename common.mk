@@ -34,7 +34,11 @@ HELM ?= helm
 JQ ?= jq
 KIND ?= kind
 KUBECTL ?= kubectl
+MDFORMAT ?= mdformat
 SHELLCHECK ?= shellcheck
+SHFMT ?= shfmt
+TREEFMT ?= treefmt
+YAMLFMT ?= yamlfmt
 YQ ?= yq
 
 # External prerequisites (not managed by flake.nix or tools.lock)
@@ -185,6 +189,44 @@ setup-local-cluster: ## Set up a Kind cluster for local development if it does n
 			$(KIND) create cluster --name $(KIND_CLUSTER) $(if $(KIND_CONFIG),--config $(KIND_CONFIG)) ;; \
 	esac
 
+##@ Formatting and linting
+
+# Shared configuration shipped from dev-kit. The rule only fires for a file that
+# is absent, so a repository that commits its own copy silently overrides it.
+DEV_KIT_CONFIGS ?= .editorconfig .golangci.yml treefmt.toml
+
+$(DEV_KIT_CONFIGS):
+	@curl --fail -sSL \
+		'https://raw.githubusercontent.com/opendefensecloud/dev-kit/$(DEV_KIT_VERSION)/$@' \
+		-o '$@.dev-kit-download'
+	@mv '$@.dev-kit-download' '$@'
+	@echo "fetched $@ from dev-kit $(DEV_KIT_VERSION)" >&2
+
+# treefmt drives gofmt (via golangci-lint), yamlfmt, shfmt and mdformat from one
+# config. LOCALGOBIN goes on PATH so it picks up the pinned golangci-lint from
+# tools.lock rather than whatever happens to be installed. Repos without Go code
+# skip that install and set TREEFMT_ARGS := --allow-missing-formatter.
+TREEFMT_ARGS ?=
+_TREEFMT_GO_TOOL := $(if $(wildcard go.mod),$(GOLANGCI_LINT))
+
+.PHONY: fmt-all
+fmt-all: $(_TREEFMT_GO_TOOL) ## Format every file in the repository
+	@$(if $(DEV_KIT_CONFIGS),$(MAKE) $(DEV_KIT_CONFIGS) >/dev/null)
+	@PATH="$(LOCALGOBIN):$$PATH" $(TREEFMT) $(TREEFMT_ARGS)
+
+.PHONY: lint-all
+lint-all: $(_TREEFMT_GO_TOOL) ## Fail if any file is not formatted
+	@$(if $(DEV_KIT_CONFIGS),$(MAKE) $(DEV_KIT_CONFIGS) >/dev/null)
+	@PATH="$(LOCALGOBIN):$$PATH" $(TREEFMT) --ci $(TREEFMT_ARGS)
+
+# Public entry points. These names are what the flake git-hooks and every
+# workflow call, so they stay stable. A repository extends them by adding
+.PHONY: fmt
+fmt: fmt-all ## Format code
+
+.PHONY: lint
+lint: lint-all shellcheck $(if $(wildcard go.mod),golangci-lint) ## Check formatting and run all linters
+
 ##@ Common golang targets
 .PHONY: mod
 mod: ## run go mod tidy, download, verify
@@ -269,11 +311,17 @@ update-common-mk-bootstrap: ## Rewrite the common.mk: rule in Makefile to the cu
 # If the remote content differs from the local file, deletes this file so that
 # Make's include-file-remake mechanism triggers the project's common.mk: rule on
 # its next restart — picking up the pre-downloaded .common.mk-download file.
+# DEV_KIT_NO_SELF_UPDATE=1 disables this. dev-kit's own Makefile sets it: there
+# common.mk is the source file, and the staleness check would delete it.
 _COMMON_MK_SELF_UPDATE := $(shell \
+  [ -z '$(DEV_KIT_NO_SELF_UPDATE)' ] || exit 0; \
   hash_cmd=$$(command -v sha256sum >/dev/null 2>&1 && echo "sha256sum" || echo "shasum -a 256"); \
   stored=$$(cat .common.mk-version 2>/dev/null); \
   if [ "$$stored" != "$(DEV_KIT_VERSION)" ]; then \
     rm -f .common.mk-checked .common.mk-download; \
+    for f in $(DEV_KIT_CONFIGS); do \
+      git ls-files --error-unmatch "$$f" >/dev/null 2>&1 || rm -f "$$f"; \
+    done; \
   elif find .common.mk-checked -mmin -60 2>/dev/null | grep -q .; then \
     exit 0; \
   fi; \

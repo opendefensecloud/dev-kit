@@ -1,0 +1,32 @@
+# Shared editor defaults for ODC repositories.
+# Bootstrapped from dev-kit by common.mk. Commit a local .editorconfig file to override it.
+#
+# Kept in sync with treefmt.toml on purpose: shfmt reads this file for shell
+# style, so the editor and `make fmt` cannot disagree.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.go]
+indent_style = tab
+indent_size = 4
+
+[{Makefile,*.mk}]
+indent_style = tab
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.{sh,bash}]
+switch_case_indent = true
+space_redirects = true
+
+[*.{json,yml,yaml,toml}]
+indent_size = 2

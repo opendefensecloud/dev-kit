@@ -5,10 +5,10 @@
 # opendefensecloud/solution-arsenal#556 for the rationale (envtest's release
 # cadence lags K8s releases sporadically; upstream is closed-as-not-planned).
 #
-# dl.k8s.io has all versions but only Linux builds. controller-tools has 
+# dl.k8s.io has all versions but only Linux builds. controller-tools has
 # Darwin builds, but not for all versions of Kubernetes and etcd.
-# To run a specific version under Darwin might not be possible, 
-# 
+# To run a specific version under Darwin might not be possible,
+#
 # So it should:
 #   - check K8S_VERSION, use envtest-setup binaries if available
 #   - if not, fall back to dl.k8s.io(which has no Darwin builds)
@@ -35,7 +35,7 @@ K8S_VERSION="${K8S_VERSION#v}"
 YQ="${YQ:-yq}"
 
 # Idempotency — bail out if setup-envtest already finds this version in cache.
-if "$SETUP_ENVTEST" use "$K8S_VERSION" --bin-dir "$BIN_DIR" -i -p path >/dev/null 2>&1; then
+if "$SETUP_ENVTEST" use "$K8S_VERSION" --bin-dir "$BIN_DIR" -i -p path > /dev/null 2>&1; then
   exit 0
 fi
 
@@ -43,9 +43,12 @@ fi
 # below need it.
 os=$(uname -s | tr '[:upper:]' '[:lower:]')
 case "$(uname -m)" in
-  x86_64)        arch=amd64 ;;
-  aarch64|arm64) arch=arm64 ;;
-  *) echo "envtest-sideload: unsupported arch $(uname -m)" >&2; exit 1 ;;
+  x86_64) arch=amd64 ;;
+  aarch64 | arm64) arch=arm64 ;;
+  *)
+    echo "envtest-sideload: unsupported arch $(uname -m)" >&2
+    exit 1
+    ;;
 esac
 
 # We can only assemble a sideload tarball from upstream sources on linux and
@@ -54,10 +57,10 @@ esac
 # vanilla `setup-envtest use` (the controller-tools index) and only fail when
 # the requested version isn't there.
 if [ "$os" != linux ] && [ "$os" != darwin ]; then
-  if "$SETUP_ENVTEST" use "$K8S_VERSION" --bin-dir "$BIN_DIR" -p path >/dev/null 2>&1; then
+  if "$SETUP_ENVTEST" use "$K8S_VERSION" --bin-dir "$BIN_DIR" -p path > /dev/null 2>&1; then
     exit 0
   fi
-  cat >&2 <<EOF
+  cat >&2 << EOF
 envtest-sideload: ${os} is supported only via controller-tools' pre-packaged
   archives, but '${K8S_VERSION}' is not in their index and this script can only
   sideload upstream binaries on linux and darwin.
@@ -73,7 +76,7 @@ fi
 # pre-packaged darwin archive whenever the requested version is in their index;
 # only fall through to the source build when it isn't.
 if [ "$os" = darwin ]; then
-  if "$SETUP_ENVTEST" use "$K8S_VERSION" --bin-dir "$BIN_DIR" -p path >/dev/null 2>&1; then
+  if "$SETUP_ENVTEST" use "$K8S_VERSION" --bin-dir "$BIN_DIR" -p path > /dev/null 2>&1; then
     exit 0
   fi
 fi
@@ -92,7 +95,7 @@ fetch() {
 # checks them. GNU coreutils ships `sha256sum`; stock macOS ships only
 # `shasum`. Both accept the same check format on stdin.
 sha256_check() {
-  if command -v sha256sum >/dev/null 2>&1; then
+  if command -v sha256sum > /dev/null 2>&1; then
     sha256sum -c -
   else
     shasum -a 256 -c -
@@ -102,8 +105,8 @@ sha256_check() {
 # Look up the etcd version K8s ships with from its build/dependencies.yaml.
 # Self-updating per K8s release.
 deps_url="https://raw.githubusercontent.com/kubernetes/kubernetes/v${K8S_VERSION}/build/dependencies.yaml"
-etcd_version=$(fetch "$deps_url" \
-  | "$YQ" '.dependencies[] | select(.name == "etcd") | .version' | tr -d '"')
+etcd_version=$(fetch "$deps_url" |
+  "$YQ" '.dependencies[] | select(.name == "etcd") | .version' | tr -d '"')
 if [[ -z "$etcd_version" ]]; then
   echo "envtest-sideload: could not resolve etcd version from $deps_url" >&2
   exit 1
@@ -132,10 +135,10 @@ k8s_base="https://dl.k8s.io/release/v${K8S_VERSION}/bin/${os}/${arch}"
 download_k8s_bin() {
   local bin="$1"
   echo "envtest-sideload: downloading ${k8s_base}/${bin}"
-  fetch -o "$stage/k8s-bin/$bin"        "$k8s_base/$bin"
+  fetch -o "$stage/k8s-bin/$bin" "$k8s_base/$bin"
   fetch -o "$stage/k8s-bin/$bin.sha256" "$k8s_base/$bin.sha256"
   # The .sha256 sibling is just the hex digest; pair with the filename ourselves.
-  ( cd "$stage/k8s-bin" && printf '%s  %s\n' "$(cat "$bin.sha256")" "$bin" | sha256_check )
+  (cd "$stage/k8s-bin" && printf '%s  %s\n' "$(cat "$bin.sha256")" "$bin" | sha256_check)
   chmod +x "$stage/k8s-bin/$bin"
 }
 
@@ -148,7 +151,7 @@ else
   # tagged Kubernetes source — exactly what controller-tools does to produce
   # its darwin envtest archives. First run is slow (~hundreds of MB of source
   # + a multi-minute compile); the result is cached by setup-envtest afterward.
-  command -v go >/dev/null 2>&1 || {
+  command -v go > /dev/null 2>&1 || {
     echo "envtest-sideload: building kube-apiserver for ${os} requires Go on PATH" >&2
     exit 1
   }
@@ -173,8 +176,8 @@ else
     ldflags+=" -X ${pkg}.gitTreeState=clean"
     ldflags+=" -X ${pkg}.buildDate=${build_date}"
   done
-  ( cd "$src" && CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
-      go build -ldflags "$ldflags" -o "$stage/k8s-bin/kube-apiserver" ./cmd/kube-apiserver )
+  (cd "$src" && CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
+    go build -ldflags "$ldflags" -o "$stage/k8s-bin/kube-apiserver" ./cmd/kube-apiserver)
   chmod +x "$stage/k8s-bin/kube-apiserver"
 fi
 
@@ -191,17 +194,17 @@ else
 fi
 echo "envtest-sideload: downloading ${etcd_base}/${etcd_archive}"
 fetch -o "$stage/$etcd_archive" "$etcd_base/$etcd_archive"
-fetch -o "$stage/SHA256SUMS"    "$etcd_base/SHA256SUMS"
+fetch -o "$stage/SHA256SUMS" "$etcd_base/SHA256SUMS"
 # etcd's SHA256SUMS lists `<hash>  <filename>` for every platform archive;
 # select our exact filename (awk field match — no regex metachars) and verify.
-( cd "$stage" && awk -v f="$etcd_archive" '$2 == f' SHA256SUMS | sha256_check )
+(cd "$stage" && awk -v f="$etcd_archive" '$2 == f' SHA256SUMS | sha256_check)
 extract_etcd
 
 # --- Assemble the sideload tarball with the three binaries at top level ---
 sideload_tar="$stage/sideload.tar.gz"
 tar -czf "$sideload_tar" \
-  -C "$stage/k8s-bin"     kube-apiserver kubectl \
-  -C "$stage/$etcd_dir"   etcd
+  -C "$stage/k8s-bin" kube-apiserver kubectl \
+  -C "$stage/$etcd_dir" etcd
 
 # Feed it to setup-envtest. --os/--arch matter — sideload writes the cache
 # entry keyed on platform.
@@ -211,5 +214,5 @@ echo "envtest-sideload: sideloading ${K8S_VERSION} into ${BIN_DIR}"
   < "$sideload_tar"
 
 # Sanity-check that setup-envtest can now find it.
-"$SETUP_ENVTEST" use "$K8S_VERSION" --bin-dir "$BIN_DIR" -i -p path >/dev/null
+"$SETUP_ENVTEST" use "$K8S_VERSION" --bin-dir "$BIN_DIR" -i -p path > /dev/null
 echo "envtest-sideload: done"

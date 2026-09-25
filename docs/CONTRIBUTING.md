@@ -12,17 +12,17 @@ This project follows the [Conventional Commits](https://www.conventionalcommits.
 
 ### Allowed Types
 
-| Type       | Purpose                                              |
+| Type | Purpose |
 | ---------- | ---------------------------------------------------- |
-| `feat`     | A new feature                                        |
-| `fix`      | A bug fix                                            |
-| `docs`     | Documentation changes                                |
-| `chore`    | Maintenance tasks (deps, CI config, etc.)            |
+| `feat` | A new feature |
+| `fix` | A bug fix |
+| `docs` | Documentation changes |
+| `chore` | Maintenance tasks (deps, CI config, etc.) |
 | `refactor` | Code changes that neither fix a bug nor add a feature |
-| `test`     | Adding or updating tests                             |
-| `ci`       | CI/CD pipeline changes                               |
-| `perf`     | Performance improvements                             |
-| `revert`   | Reverting a previous commit                          |
+| `test` | Adding or updating tests |
+| `ci` | CI/CD pipeline changes |
+| `perf` | Performance improvements |
+| `revert` | Reverting a previous commit |
 
 ### Examples
 
