@@ -39,6 +39,7 @@ expect fail "single-quoted tag ref" workflows/a.yml "      - uses: 'actions/chec
 expect fail "extra sequence spacing" workflows/a.yml "      -   uses: actions/checkout@v7"
 expect fail "unpinned reusable workflow" workflows/a.yml "    uses: org/repo/.github/workflows/x.yml@main"
 expect fail "unpinned composite action" actions/foo/action.yml "    - uses: actions/checkout@v7"
+expect fail "SHA only in the comment" workflows/a.yml "      - uses: actions/checkout@main # @$SHA"
 expect fail "short SHA" workflows/a.yml "      - uses: actions/checkout@${SHA:0:7}"
 
 exit "$fail"
