@@ -6,12 +6,17 @@ name: renovate-auto-approve
 #     approve:
 #       uses: opendefensecloud/dev-kit/.github/workflows/renovate-auto-approve.yml@<sha-or-tag>
 #       permissions:
+#         contents: read
 #         pull-requests: write
 #
-# It approves a Renovate PR that carries the automerge label and not the block
-# label (security). If a PR later gains the block label, it revokes its own
-# earlier approval so a human is required again. The merge itself always stays
-# gated on the repo's required status checks.
+# It approves a Renovate PR that carries the automerge label, added by Renovate,
+# and not the block label (security), and only while the branch still holds
+# exactly one commit, authored by Renovate and signed, and pushed by Renovate.
+# Once someone pushes
+# onto the branch it stops qualifying, because that change was never reviewed by
+# anyone. If a PR stops qualifying or later gains the block label, the workflow
+# revokes its own earlier approval so a human is required again. The merge
+# itself always stays gated on the repo's required status checks.
 #
 # Which update types are eligible (the automerge label) is decided by the
 # renovate-config presets, not here: github>opendefensecloud/renovate-config.
@@ -33,6 +38,7 @@ on:
         default: renovate[bot]
 
 permissions:
+  contents: read # repository activity API, to see who pushed the head
   pull-requests: write
 
 concurrency:
@@ -48,14 +54,16 @@ jobs:
       (contains(github.event.pull_request.labels.*.name, inputs.automerge-label) ||
        contains(github.event.pull_request.labels.*.name, inputs.block-label))
     steps:
-      - name: Approve, or revoke a prior approval if the block label appears
+      - name: Approve an unmodified Renovate PR, or revoke a prior approval
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
           LABEL: ${{ inputs.automerge-label }}
           BLOCK_LABEL: ${{ inputs.block-label }}
           HAS_BLOCK: ${{ contains(github.event.pull_request.labels.*.name, inputs.block-label) }}
+          RENOVATE_ACTOR: ${{ inputs.renovate-actor }}
         run: |
           set -euo pipefail
           # Latest review state left by this workflow's identity (github-actions[bot]).
@@ -70,6 +78,46 @@ jobs:
               echo "PR carries the $BLOCK_LABEL label; no automated approval to revoke."
             fi
             exit 0
+          fi
+          # Stops without approving, and revokes an earlier automated approval.
+          reject() {
+            echo "Not approving: $1."
+            # Dismiss a stale approval
+            if [ "$latest_state" = "APPROVED" ]; then
+              echo "Revoking the earlier automated approval."
+              gh pr review "$PR_NUMBER" --request-changes \
+                --body "Revoked: $1. This PR needs a human review."
+            fi
+            exit 0
+          }
+          # The job-level gate only checks who opened the PR. Also check that
+          # the branch holds exactly one commit, authored by Renovate, signed, and
+          # pushed by Renovate, and that Renovate itself added the automerge label.
+          commits=$(gh api -X GET "repos/$GH_REPO/pulls/$PR_NUMBER/commits" -f per_page=2)
+          if [ "$(jq 'length' <<<"$commits")" != 1 ]; then
+            reject "the branch holds more than one commit"
+          fi
+          head_sha=$(jq -r '.[0].sha' <<<"$commits")
+          author=$(jq -r '.[0].author.login // empty' <<<"$commits")
+          if [ "$author" != "$RENOVATE_ACTOR" ]; then
+            reject "commit $head_sha is authored by '${author:-unknown}', not $RENOVATE_ACTOR"
+          fi
+          if [ "$(jq -r '.[0].commit.verification.verified' <<<"$commits")" != true ]; then
+            reject "commit $head_sha is not signed"
+          fi
+          activity=$(gh api -X GET "repos/$GH_REPO/activity" -f ref="refs/heads/$HEAD_REF" -f per_page=1)
+          if [ "$(jq -r '.[0].after // empty' <<<"$activity")" != "$head_sha" ]; then
+            reject "the latest push to $HEAD_REF is not the push of commit $head_sha"
+          fi
+          pusher=$(jq -r '.[0].actor.login // empty' <<<"$activity")
+          if [ "$pusher" != "$RENOVATE_ACTOR" ]; then
+            reject "commit $head_sha was pushed by '$pusher', not $RENOVATE_ACTOR"
+          fi
+          # Events come oldest first; keep who added the automerge label last.
+          labeler=$(gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/events" \
+            --jq '.[] | select(.event == "labeled" and .label.name == env.LABEL) | .actor.login' | tail -n 1)
+          if [ "$labeler" != "$RENOVATE_ACTOR" ]; then
+            reject "the $LABEL label was added by '$labeler', not $RENOVATE_ACTOR"
           fi
           if [ "$latest_state" = "APPROVED" ]; then
             echo "Already approved by github-actions; nothing to do."
