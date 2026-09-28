@@ -256,6 +256,12 @@ them together with `DEV_KIT_VERSION`.
 | `renovate-auto-approve.yml` | `pull_request`                                         | see the header of the workflow  |
 | `renovate-dev-kit-lock.yml` | `pull_request` (opened, synchronize, reopened)         | `DEV_KIT_APP_*` org secrets     |
 
+No stub triggers on `merge_group`, as no repo uses a merge queue. A repo that
+turns one on must add the trigger to every stub whose check it requires, and
+must not require `osv-scanner / scan-pr / osv-scan`: that PR scan diffs
+against `$GITHUB_BASE_REF`, which is empty in a merge queue (see
+`osv-scanner.yml`).
+
 `.github/workflows/update-action-pins.yml`:
 
 ```yaml
