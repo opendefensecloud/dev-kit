@@ -1,6 +1,8 @@
 name: renovate-dev-kit-lock
 
-# Reusable only. Commits `nix flake update dev-kit` to Renovate's dev-kit PR.
+# Reusable only. Commits `nix flake lock` to Renovate's dev-kit PR. It relocks
+# only inputs whose flake.nix reference changed, here the bumped dev-kit tag,
+# and is a no-op otherwise, so a re-run after its own commit changes nothing.
 # Renovate bumps the flake input tag with a regex manager, which can't update
 # flake.lock; without this, `nix develop` rewrites the lock in CI and any
 # diff-check fails. See "Governance workflows" in the README for the stub.
@@ -53,7 +55,7 @@ jobs:
       - name: Relock dev-kit
         id: relock
         run: |
-          nix flake update dev-kit
+          nix flake lock
           if git diff --quiet -- flake.lock; then
             echo "flake.lock already matches flake.nix"
             echo "changed=false" >> "$GITHUB_OUTPUT"

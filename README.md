@@ -353,8 +353,8 @@ jobs:
       ADD_TO_PROJECT_PAT: ${{ secrets.ADD_TO_PROJECT_PAT }}
 ```
 
-`.github/workflows/renovate-dev-kit-lock.yml` commits `nix flake update dev-kit`
-to Renovate's `renovate/dev-kit` PR, which bumps the flake input tag but can't
+`.github/workflows/renovate-dev-kit-lock.yml` commits `nix flake lock` to
+Renovate's `renovate/dev-kit` PR, which bumps the flake input tag but can't
 update `flake.lock`. It commits as the org's dev-kit GitHub App, so the commit
 is signed and starts CI; any other PR skips it:
 
