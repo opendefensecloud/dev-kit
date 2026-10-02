@@ -6,10 +6,12 @@ on:
   pull_request:
     types: [opened, reopened, synchronize, labeled, unlabeled]
 permissions:
+  contents: read
   pull-requests: write
 jobs:
   approve:
     # Pin @<sha-or-tag> to a dev-kit release tag or commit SHA before using this.
     uses: opendefensecloud/dev-kit/.github/workflows/renovate-auto-approve.yml@<sha-or-tag>
     permissions:
+      contents: read
       pull-requests: write
