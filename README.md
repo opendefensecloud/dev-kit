@@ -188,7 +188,7 @@ them together with `DEV_KIT_VERSION`.
 | `issues-add-labels.yaml`    | `issues` (opened, reopened)                            |                                 |
 | `issues-add-to-project.yml` | `issues`, `pull_request` (opened)                      | `ADD_TO_PROJECT_PAT` secret     |
 | `renovate-auto-approve.yml` | `pull_request`                                         | see the header of the workflow  |
-| `renovate-dev-kit-lock.yml` | `pull_request` (opened, synchronize, reopened)         | `DEV_KIT_APP_*` org secrets     |
+| `renovate-dev-kit-lock.yml` | `pull_request` (opened, synchronize, reopened)         | `DEV_KIT_BOT_APP_*` org secrets |
 
 No stub triggers on `merge_group`, as no repo uses a merge queue. A repo that
 turns one on must add the trigger to every stub whose check it requires, and
@@ -304,8 +304,8 @@ jobs:
   relock:
     uses: opendefensecloud/dev-kit/.github/workflows/renovate-dev-kit-lock.yml@<40-char-sha> # <tag>
     secrets:
-      DEV_KIT_APP_CLIENT_ID: ${{ secrets.DEV_KIT_APP_CLIENT_ID }}
-      DEV_KIT_APP_PRIVATE_KEY: ${{ secrets.DEV_KIT_APP_PRIVATE_KEY }}
+      DEV_KIT_BOT_APP_CLIENT_ID: ${{ secrets.DEV_KIT_BOT_APP_CLIENT_ID }}
+      DEV_KIT_BOT_APP_PRIVATE_KEY: ${{ secrets.DEV_KIT_BOT_APP_PRIVATE_KEY }}
 ```
 
 A job from a reusable workflow reports as `<stub job> / <called job>`, so
