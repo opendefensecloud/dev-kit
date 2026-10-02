@@ -28,8 +28,6 @@ linters:
     presets: [comments, common-false-positives, legacy, std-error-handling]
     paths: [third_party, builtin$, examples$]
     warn-unused: true
-  disable:
-    - nilnil
   enable:
     - asasalint
     - asciicheck
@@ -54,13 +52,11 @@ linters:
     - gocritic
     - godoclint
     - godot
-    - goheader
     - goprintffuncname
     - gosec
     - gosmopolitan
     - govet
     - grouper
-    - importas
     - ineffassign
     - interfacebloat
     - intrange
@@ -72,7 +68,6 @@ linters:
     - musttag
     - nakedret
     - nilerr
-    - nilnil
     - nlreturn
     - noctx
     - nosprintfhostport

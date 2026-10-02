@@ -11,7 +11,7 @@ Create the repo on GitHub (via UI or `gh repo create`) under the `opendefenseclo
 Copy the files from `example/` into your project root and adjust them:
 
 - **`flake.nix`** — Set `goVersion`, add extra `packages`, and configure `preCommitHooks` as needed. If your project does not use Go, omit `goVersion`.
-- **`Makefile`** — Pin `DEV_KIT_VERSION` to a release tag (e.g. `v1.0.0`). `fmt` and `lint` come from `common.mk`; do not redefine them. To add a repository-specific step, attach it as a prerequisite (e.g. `fmt: license-headers`), which appends without overriding the shared recipe.
+- **`Makefile`** — Pin `DEV_KIT_VERSION` to a release tag (e.g. `v1.0.0`) and set `DEV_KIT_FORMATTING := on`; both go before `-include common.mk`. A new repository has nothing to migrate, so formatting can be on from the start. `fmt` and `lint` come from `common.mk`; do not redefine them. To add a repository-specific step, attach it as a prerequisite (e.g. `fmt: license-headers`), which appends without overriding the shared recipe.
 - **`tools.lock`** — Add any Go tool dependencies your project needs (one per line: `<name> <module>@<version>`).
 - **`renovate.json`** — Copy as-is. The custom managers handle `DEV_KIT_VERSION` in your Makefile and entries in `tools.lock`.
 

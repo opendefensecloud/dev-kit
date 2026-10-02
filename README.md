@@ -35,6 +35,21 @@ The included `common.mk` provides:
 
 ### Formatting and linting
 
+Formatting is **opt-in**. Set it in the project `Makefile` before
+`-include common.mk`, next to `DEV_KIT_VERSION`:
+
+```make
+DEV_KIT_FORMATTING := on
+```
+
+Until a repository does, `fmt` and `lint` behave exactly as they did before this
+existed. That matters because a repository which still defines its own `fmt:` or
+`lint:` recipe would otherwise have `fmt-all`/`lint-all` merged in as
+prerequisites silently on its next `DEV_KIT_VERSION` bump — make appends
+prerequisites without warning — and start failing on every YAML, Markdown and
+shell file it has never formatted. Run the one-time `make fmt-all` commit first,
+then switch it on deliberately.
+
 One formatter front-end for the whole repository. `treefmt` drives gofmt (via
 `golangci-lint fmt`, so import order stays configured in one place), `yamlfmt`,
 `shfmt` and `mdformat`.
@@ -53,8 +68,16 @@ insist on a formatter it will never call, and narrow `DEV_KIT_CONFIGS` to drop
 `treefmt.toml`, `.golangci.yml` and `.editorconfig` are fetched from dev-kit at
 the pinned `DEV_KIT_VERSION` the first time they are needed, and refetched when
 that version changes. A repository that commits its own copy of one of these
-files keeps it. The fetch rule only fires for a file that is absent. Add the
-bootstrapped ones to `.gitignore` next to the existing `common.mk` entry.
+files keeps it. The fetch rule only fires for a file that is absent, and an
+alternate spelling counts as an override (`.golangci.yaml`, `.treefmt.toml`).
+Add the bootstrapped ones to `.gitignore`, together with `.common.mk-configs`,
+next to the existing `common.mk` entry — `.common.mk-configs` records what was
+fetched so that a `DEV_KIT_VERSION` bump only ever removes files this mechanism
+created, never a hand-written override that is not committed yet.
+
+Refresh happens when the `DEV_KIT_VERSION` string changes. With a moving ref
+(`main`) the configs are therefore fetched once and not refreshed again, while
+`common.mk` itself keeps updating via its hourly content check.
 
 `shfmt` reads its style from `.editorconfig`, so an editor and `make fmt` cannot
 disagree about shell scripts.
@@ -74,6 +97,7 @@ lint: license-headers-check
 | `BUILD_PATH` | `$(shell pwd)` | Base directory for local binaries |
 | `LOCALBIN` | `$(BUILD_PATH)/bin` | Directory for installed binaries |
 | `OSV_SCANNER_CONFIG` | `./.osv-scanner.toml` | Path to osv-scanner configuration |
+| `DEV_KIT_FORMATTING` | `off` | `on` enables the shared `fmt`/`lint` formatting. Set it before `-include common.mk` |
 | `DEV_KIT_CONFIGS` | `.editorconfig .golangci.yml treefmt.toml` | Shared configs to bootstrap; set to empty to opt out |
 | `TREEFMT_ARGS` | *(empty)* | Extra treefmt flags, e.g. `--allow-missing-formatter` in repos without Go |
 | `OS` | `$(shell $(GO) env GOOS)` | Current Operating System |
