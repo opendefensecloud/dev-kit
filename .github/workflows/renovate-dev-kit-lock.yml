@@ -20,9 +20,9 @@ on:
         type: string
         default: renovate/dev-kit
     secrets:
-      DEV_KIT_APP_CLIENT_ID:
+      DEV_KIT_BOT_APP_CLIENT_ID:
         required: true
-      DEV_KIT_APP_PRIVATE_KEY:
+      DEV_KIT_BOT_APP_PRIVATE_KEY:
         required: true
 
 permissions:
@@ -66,8 +66,8 @@ jobs:
         if: steps.relock.outputs.changed == 'true'
         id: app
         with:
-          client-id: ${{ secrets.DEV_KIT_APP_CLIENT_ID }}
-          private-key: ${{ secrets.DEV_KIT_APP_PRIVATE_KEY }}
+          client-id: ${{ secrets.DEV_KIT_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.DEV_KIT_BOT_APP_PRIVATE_KEY }}
           permission-contents: write
       - name: Commit flake.lock
         if: steps.relock.outputs.changed == 'true'
