@@ -7,8 +7,7 @@ inputs:
     default: opendefensecloud
   cachix-auth-token:
     description: >-
-      Cachix auth token. Leave empty to fall back to a read-only cache, which
-      is what happens on fork pull requests, where secrets are unavailable.
+      Cachix auth token. Leave empty to fall back to a read-only cache, which is what happens on fork pull requests, where secrets are unavailable.
     required: false
     default: ''
   cachix-signing-key:

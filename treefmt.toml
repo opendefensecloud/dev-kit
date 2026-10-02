@@ -1,0 +1,61 @@
+# Shared formatter front-end for ODC repositories.
+# Bootstrapped from dev-kit by common.mk; commit a local treefmt.toml
+# file to override it.
+#
+# `make fmt` writes, `make lint` fails on drift. Both go through treefmt.
+
+on-unmatched = "info"
+
+# `{,**/}` so a pattern matches at the repository root as well as nested: a
+# bare `**/` requires at least one leading path segment.
+excludes = [
+  # Generated output. Owned by controller-gen, openapi-gen, crd-ref-docs and
+  # helm-docs — reformatting it only makes `make codegen` dirty again.
+  "{,**/}zz_generated.*",
+  "{,**/}charts/*/files/**",
+  "{,**/}charts/**/README.md",
+  "{,**/}docs/user-guide/api-reference.md",
+  "{,**/}client-go/openapi/**",
+  # A `template`/`templates` directory holds Go templates (Helm charts, the
+  # solar renderer), and KRO RGD templates embed CEL in unquoted scalars.
+  # Neither is parseable YAML.
+  "{,**/}template/**",
+  "{,**/}templates/**",
+  "{,**/}rgd-template.yaml",
+  "{,**/}*.gotmpl",
+  "{,**/}*.tpl",
+  # Test inputs are meant to be byte-exact, including the malformed ones.
+  "{,**/}testdata/**",
+  "{,**/}fixtures/**",
+  # Not ours.
+  "{,**/}vendor/**",
+  "{,**/}third_party/**",
+  "bin/**",
+  "{,**/}*.lock",
+  "LICENSE",
+]
+
+# Go: delegated to golangci-lint so import order (gci custom-order) stays
+# configured in .golangci.yml only. Running gofmt here instead would fight it.
+[formatter.go]
+command = "golangci-lint"
+options = ["fmt"]
+includes = ["*.go"]
+
+[formatter.yaml]
+command = "yamlfmt"
+options = ["-formatter", "retain_line_breaks=true,indent=2,include_document_start=false"]
+includes = ["*.yml", "*.yaml"]
+
+# Style comes from .editorconfig, which shfmt reads when given no style flags.
+[formatter.shell]
+command = "shfmt"
+options = ["-w"]
+includes = ["*.sh", "*.bash"]
+
+# --number keeps ordered lists numbered 1. 2. 3. in the source; mdformat's
+# default rewrites them all to "1.", which renders the same and reads worse.
+[formatter.markdown]
+command = "mdformat"
+options = ["--number"]
+includes = ["*.md"]

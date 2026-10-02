@@ -1,6 +1,8 @@
 # Include ODC common make targets
 # FIXME(user): replace with a static dev-kit release (https://github.com/opendefensecloud/dev-kit/releases)
 DEV_KIT_VERSION := refs/heads/main
+# Shared formatting via treefmt. A new repository has nothing to migrate.
+DEV_KIT_FORMATTING := on
 
 -include common.mk
 common.mk:
@@ -18,7 +20,3 @@ cobra: $(COBRA)
 
 scan:
 	echo hello
-
-fmt: # FIXME(user): Implement the fmt target or disable the pre-commit hook for it (flake.nix)
-
-lint: # FIXME(user): Implement the lint target or disable the pre-commit hook for it (flake.nix)

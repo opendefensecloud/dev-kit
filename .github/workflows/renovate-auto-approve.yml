@@ -49,9 +49,7 @@ jobs:
   auto-approve:
     runs-on: ubuntu-latest
     if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.user.login == inputs.renovate-actor &&
-      (contains(github.event.pull_request.labels.*.name, inputs.automerge-label) ||
+      github.event_name == 'pull_request' && github.event.pull_request.user.login == inputs.renovate-actor && (contains(github.event.pull_request.labels.*.name, inputs.automerge-label) ||
        contains(github.event.pull_request.labels.*.name, inputs.block-label))
     steps:
       - name: Approve an unmodified Renovate PR, or revoke a prior approval
