@@ -17,21 +17,21 @@ Copy the files from `example/` into your project and adjust them for your needs.
 
 The included `common.mk` provides:
 
-| Target | Description |
-| --- | --- |
-| `help` | Display all available targets |
-| `clean` | Remove the `bin/` directory |
-| `fmt` | Format every file in the repository |
-| `lint` | Check formatting, then run shellcheck and, when the repository has a `go.mod`, golangci-lint |
-| `fmt-all` | Formatting only (what `fmt` calls) |
-| `lint-all` | Fail if any file is not formatted (what `lint` calls) |
-| `mod` | Run `go mod tidy`, `download`, and `verify` |
-| `golangci-lint` | Run golangci-lint |
-| `shellcheck` | Run shellcheck on shell scripts |
-| `scan` | Scan for vulnerabilities using osv-scanner |
-| `setup-local-cluster` | Create a Kind cluster for local development |
-| `repo-settings` | Reconcile GitHub repository settings |
-| `envtest-binaries-sideload` | Populate the envtest cache from upstream K8s/etcd releases |
+| Target                      | Description                                                                                  |
+| --------------------------- | -------------------------------------------------------------------------------------------- |
+| `help`                      | Display all available targets                                                                |
+| `clean`                     | Remove the `bin/` directory                                                                  |
+| `fmt`                       | Format every file in the repository                                                          |
+| `lint`                      | Check formatting, then run shellcheck and, when the repository has a `go.mod`, golangci-lint |
+| `fmt-all`                   | Formatting only (what `fmt` calls)                                                           |
+| `lint-all`                  | Fail if any file is not formatted (what `lint` calls)                                        |
+| `mod`                       | Run `go mod tidy`, `download`, and `verify`                                                  |
+| `golangci-lint`             | Run golangci-lint                                                                            |
+| `shellcheck`                | Run shellcheck on shell scripts                                                              |
+| `scan`                      | Scan for vulnerabilities using osv-scanner                                                   |
+| `setup-local-cluster`       | Create a Kind cluster for local development                                                  |
+| `repo-settings`             | Reconcile GitHub repository settings                                                         |
+| `envtest-binaries-sideload` | Populate the envtest cache from upstream K8s/etcd releases                                   |
 
 ### Formatting and linting
 
@@ -42,13 +42,16 @@ Formatting is **opt-in**. Set it in the project `Makefile` before
 DEV_KIT_FORMATTING := on
 ```
 
-Until a repository does, `fmt` and `lint` behave exactly as they did before this
-existed. That matters because a repository which still defines its own `fmt:` or
-`lint:` recipe would otherwise have `fmt-all`/`lint-all` merged in as
-prerequisites silently on its next `DEV_KIT_VERSION` bump — make appends
-prerequisites without warning — and start failing on every YAML, Markdown and
-shell file it has never formatted. Run the one-time `make fmt-all` commit first,
-then switch it on deliberately.
+While it is off, no formatting runs: `fmt` does nothing beyond whatever the
+project's own `fmt:` rule does, and `lint` runs `shellcheck` and
+`golangci-lint` exactly as before, fetching only `.golangci.yml`.
+
+This is opt-in because a repository that still defines its own `fmt:` or `lint:`
+recipe would otherwise have `fmt-all`/`lint-all` merged in as prerequisites
+silently on its next `DEV_KIT_VERSION` bump — make appends prerequisites without
+warning — and start failing on every YAML, Markdown and shell file it has never
+formatted. Run the one-time `make fmt-all` commit first, then switch it on
+deliberately.
 
 One formatter front-end for the whole repository. `treefmt` drives gofmt (via
 `golangci-lint fmt`, so import order stays configured in one place), `yamlfmt`,
@@ -60,10 +63,9 @@ make lint    # fails on drift, then shellcheck and golangci-lint (Go repos)
 ```
 
 The Go steps are conditional on a `go.mod` in the repository root: without one,
-`lint` skips golangci-lint and `fmt` does not install it. Repositories with no
-Go code also set `TREEFMT_ARGS := --allow-missing-formatter` so treefmt does not
-insist on a formatter it will never call, and narrow `DEV_KIT_CONFIGS` to drop
-`.golangci.yml`.
+`lint` skips golangci-lint, `fmt` does not install it, `.golangci.yml` is not
+fetched, and treefmt is passed `--allow-missing-formatter` so it does not insist
+on a formatter it will never call. None of that needs configuring by hand.
 
 `treefmt.toml`, `.golangci.yml` and `.editorconfig` are fetched from dev-kit at
 the pinned `DEV_KIT_VERSION` the first time they are needed, and refetched when
@@ -92,16 +94,16 @@ lint: license-headers-check
 
 ### Variables
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `BUILD_PATH` | `$(shell pwd)` | Base directory for local binaries |
-| `LOCALBIN` | `$(BUILD_PATH)/bin` | Directory for installed binaries |
-| `OSV_SCANNER_CONFIG` | `./.osv-scanner.toml` | Path to osv-scanner configuration |
-| `DEV_KIT_FORMATTING` | `off` | `on` enables the shared `fmt`/`lint` formatting. Set it before `-include common.mk` |
-| `DEV_KIT_CONFIGS` | `.editorconfig .golangci.yml treefmt.toml` | Shared configs to bootstrap; set to empty to opt out |
-| `TREEFMT_ARGS` | *(empty)* | Extra treefmt flags, e.g. `--allow-missing-formatter` in repos without Go |
-| `OS` | `$(shell $(GO) env GOOS)` | Current Operating System |
-| `ARCH` | `$(shell $(GO) env GOARCH)` | Current CPU architecture |
+| Variable             | Default                                    | Description                                                                                                                          |
+| -------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `BUILD_PATH`         | `$(shell pwd)`                             | Base directory for local binaries                                                                                                    |
+| `LOCALBIN`           | `$(BUILD_PATH)/bin`                        | Directory for installed binaries                                                                                                     |
+| `OSV_SCANNER_CONFIG` | `./.osv-scanner.toml`                      | Path to osv-scanner configuration                                                                                                    |
+| `DEV_KIT_FORMATTING` | `off`                                      | `on` enables the shared `fmt`/`lint` formatting. Set it before `-include common.mk`                                                  |
+| `DEV_KIT_CONFIGS`    | `.editorconfig .golangci.yml treefmt.toml` | Shared configs to bootstrap; set to empty to opt out. Each file is skipped automatically when the repo overrides or does not need it |
+| `TREEFMT_ARGS`       | derived                                    | Extra treefmt flags. Defaults to `--allow-missing-formatter` in repos without a `go.mod`, empty otherwise                            |
+| `OS`                 | `$(shell $(GO) env GOOS)`                  | Current Operating System                                                                                                             |
+| `ARCH`               | `$(shell $(GO) env GOARCH)`                | Current CPU architecture                                                                                                             |
 
 Any binary defined in your `tools.lock` is also available as a Make target
 (e.g. `make $(CONTROLLER_GEN)`). Take a look at the variables defined in
@@ -185,18 +187,18 @@ It configures:
 
 The repository settings are configurable via make variables (set them in your `Makefile` or pass them on the command line, e.g. `make repo-settings REPO_STATUS_CHECKS='["CI","lint"]' REPO_RULESET_BRANCHES='["release/*"]'`):
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `REPO_ALLOW_MERGE_COMMIT` | `true` | Allow merge commits in the merge strategy |
-| `REPO_ALLOW_SQUASH_MERGE` | `false` | Allow squash merging |
-| `REPO_ALLOW_REBASE_MERGE` | `false` | Allow rebase merging |
-| `REPO_REQUIRE_LAST_PUSH_APPROVAL` | `false` | Require the most recent push to be approved before merging |
-| `REPO_ADMIN_BYPASS` | `true` | When `false`, org admins cannot bypass the ruleset |
-| `REPO_REQUIRED_APPROVING_REVIEW_COUNT` | `1` | Number of approving reviews required to merge |
-| `REPO_REQUIRE_CODE_OWNER_REVIEW` | `false` | Require an approving review from code owners |
-| `REPO_REQUIRE_BRANCH_UP_TO_DATE` | `false` | Require branches to be up to date before merging (needs at least one `REPO_STATUS_CHECKS` value; `repo-settings` fails otherwise) |
-| `REPO_STATUS_CHECKS` | `[]` | JSON array of status-check contexts that must pass (e.g. `["CI","Check action pins"]`); each job name is used as-is, so contexts with spaces work; the `required_status_checks` rule is only added when this is non-empty |
-| `REPO_RULESET_BRANCHES` | `[]` | JSON array of additional branch patterns the ruleset applies to (e.g. `["release/*"]`); short names are normalized to `refs/heads/...`; the default branch is always protected |
+| Variable                               | Default | Description                                                                                                                                                                                                               |
+| -------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `REPO_ALLOW_MERGE_COMMIT`              | `true`  | Allow merge commits in the merge strategy                                                                                                                                                                                 |
+| `REPO_ALLOW_SQUASH_MERGE`              | `false` | Allow squash merging                                                                                                                                                                                                      |
+| `REPO_ALLOW_REBASE_MERGE`              | `false` | Allow rebase merging                                                                                                                                                                                                      |
+| `REPO_REQUIRE_LAST_PUSH_APPROVAL`      | `false` | Require the most recent push to be approved before merging                                                                                                                                                                |
+| `REPO_ADMIN_BYPASS`                    | `true`  | When `false`, org admins cannot bypass the ruleset                                                                                                                                                                        |
+| `REPO_REQUIRED_APPROVING_REVIEW_COUNT` | `1`     | Number of approving reviews required to merge                                                                                                                                                                             |
+| `REPO_REQUIRE_CODE_OWNER_REVIEW`       | `false` | Require an approving review from code owners                                                                                                                                                                              |
+| `REPO_REQUIRE_BRANCH_UP_TO_DATE`       | `false` | Require branches to be up to date before merging (needs at least one `REPO_STATUS_CHECKS` value; `repo-settings` fails otherwise)                                                                                         |
+| `REPO_STATUS_CHECKS`                   | `[]`    | JSON array of status-check contexts that must pass (e.g. `["CI","Check action pins"]`); each job name is used as-is, so contexts with spaces work; the `required_status_checks` rule is only added when this is non-empty |
+| `REPO_RULESET_BRANCHES`                | `[]`    | JSON array of additional branch patterns the ruleset applies to (e.g. `["release/*"]`); short names are normalized to `refs/heads/...`; the default branch is always protected                                            |
 
 ### GitHub Actions
 
@@ -204,11 +206,11 @@ The repo ships composite actions that consuming repositories reference directly.
 Pin them to a SHA with a version comment, as the action-pin check requires. The
 `<40-char-sha>` placeholders below are not copy-pasteable — substitute real digests:
 
-| Action | Description |
-| --- | --- |
-| `.github/actions/setup-nix` | Install upstream Nix and enable the shared Cachix cache |
-| `.github/actions/get-go-version` | Extract the Go version from `flake.nix` |
-| `.github/actions/diff-check` | Fail if a command left uncommitted changes behind |
+| Action                           | Description                                             |
+| -------------------------------- | ------------------------------------------------------- |
+| `.github/actions/setup-nix`      | Install upstream Nix and enable the shared Cachix cache |
+| `.github/actions/get-go-version` | Extract the Go version from `flake.nix`                 |
+| `.github/actions/diff-check`     | Fail if a command left uncommitted changes behind       |
 
 `setup-nix` replaces the two-step Nix installer + Cachix preamble that every
 job needs before it can use `nix develop` as its shell. Secrets are not visible
@@ -231,22 +233,22 @@ jobs:
       - run: make test
 ```
 
-| Input | Default | Description |
-| --- | --- | --- |
-| `cachix-name` | `opendefensecloud` | Cachix cache to use |
-| `cachix-auth-token` | `''` | Auth token; empty falls back to a read-only cache, as on fork PRs |
-| `cachix-signing-key` | `''` | Signing key; empty disables pushing to the cache |
+| Input                | Default            | Description                                                       |
+| -------------------- | ------------------ | ----------------------------------------------------------------- |
+| `cachix-name`        | `opendefensecloud` | Cachix cache to use                                               |
+| `cachix-auth-token`  | `''`               | Auth token; empty falls back to a read-only cache, as on fork PRs |
+| `cachix-signing-key` | `''`               | Signing key; empty disables pushing to the cache                  |
 
 ### Default git hooks
 
 The dev shell installs the following git hooks automatically:
 
-| Hook | Stage | Description |
-| --- | --- | --- |
-| `fmt` | `pre-commit` | Runs `make fmt` |
-| `lint` | `pre-commit` | Runs `make lint` |
+| Hook          | Stage        | Description                                                                                                               |
+| ------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `fmt`         | `pre-commit` | Runs `make fmt`                                                                                                           |
+| `lint`        | `pre-commit` | Runs `make lint`                                                                                                          |
 | `osv-scanner` | `pre-commit` | Runs `make scan` on dependency file changes (disabled by default — see [Vulnerability scanning](#vulnerability-scanning)) |
-| `commitlint` | `commit-msg` | Validates commit messages against [Conventional Commits](https://www.conventionalcommits.org/) (disabled by default) |
+| `commitlint`  | `commit-msg` | Validates commit messages against [Conventional Commits](https://www.conventionalcommits.org/) (disabled by default)      |
 
 To enable the `commitlint` hook, set `commitlint.enable = true` in `preCommitHooks` and add a `.commitlintrc.yml` to the project root:
 

@@ -44,7 +44,7 @@ includes = ["*.go"]
 
 [formatter.yaml]
 command = "yamlfmt"
-options = ["-formatter", "retain_line_breaks=true,indent=2,include_document_start=false"]
+options = ["-formatter", "retain_line_breaks=true,indent=2,include_document_start=false,scan_folded_as_literal=true"]
 includes = ["*.yml", "*.yaml"]
 
 # Style comes from .editorconfig, which shfmt reads when given no style flags.

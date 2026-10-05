@@ -188,28 +188,39 @@ setup-local-cluster: ## Set up a Kind cluster for local development if it does n
 
 ##@ Formatting and linting
 
-# Shared configuration shipped from dev-kit, fetched only when absent. A
-# repository overrides a file by committing its own copy, including under the
-# alternate spellings the org already uses (.golangci.yaml, .treefmt.toml),
-# which would otherwise be shadowed: treefmt reads treefmt.toml first, and an
-# untracked .golangci.yml trips diff-check's --untracked-files=all.
-# .golangci.yml is only fetched for repositories that have Go code.
-DEV_KIT_CONFIGS ?= \
-	$(if $(wildcard .editorconfig),,.editorconfig) \
-	$(if $(wildcard treefmt.toml .treefmt.toml),,treefmt.toml) \
-	$(if $(wildcard go.mod),$(if $(wildcard .golangci.yml .golangci.yaml),,.golangci.yml))
+# Shared configuration shipped from dev-kit, fetched only when absent.
+# The list is static and each file's decision is made inside the recipe, when
+# the rule actually runs.
+DEV_KIT_CONFIGS ?= .editorconfig .golangci.yml treefmt.toml
 
-# Records what this mechanism fetched, so a version bump only ever removes files
-# it created itself, never a hand-written override that is not committed yet.
+# golangci-lint needs only its own config, so that `lint` with formatting off
+# never pulls .editorconfig or treefmt.toml in as untracked files. Empty when
+# the repo opted out of fetching it, since no rule then exists to make it.
+DEV_KIT_GOLANGCI_CONFIG := $(filter .golangci.yml,$(DEV_KIT_CONFIGS))
+
+# Records what was fetched, so a version bump only ever removes files this
+# mechanism created itself, never a hand-written override not yet committed.
 DEV_KIT_CONFIGS_MARKER := .common.mk-configs
 
+# A repository overrides a file by committing its own copy, including under the
+# alternate spellings the org already uses: treefmt reads treefmt.toml before
+# .treefmt.toml, and an untracked .golangci.yml alongside a committed
+# .golangci.yaml would trip diff-check.
 $(DEV_KIT_CONFIGS):
-	@curl --fail -sSL \
+	@case '$@' in \
+	.golangci.yml) \
+		if [ -e .golangci.yaml ] || [ ! -e go.mod ]; then exit 0; fi ;; \
+	treefmt.toml) \
+		if [ -e .treefmt.toml ]; then exit 0; fi ;; \
+	esac; \
+	curl --fail -sSL \
 		'https://raw.githubusercontent.com/opendefensecloud/dev-kit/$(DEV_KIT_VERSION)/$@' \
-		-o '$@.dev-kit-download'
-	@mv '$@.dev-kit-download' '$@'
-	@grep -qxF '$@' $(DEV_KIT_CONFIGS_MARKER) 2>/dev/null || echo '$@' >> $(DEV_KIT_CONFIGS_MARKER)
-	@echo "fetched $@ from dev-kit $(DEV_KIT_VERSION)" >&2
+		-o '$@.dev-kit-download'; \
+	mv '$@.dev-kit-download' '$@'; \
+	if ! grep -qxF '$@' $(DEV_KIT_CONFIGS_MARKER) 2>/dev/null; then \
+		echo '$@' >> $(DEV_KIT_CONFIGS_MARKER); \
+	fi; \
+	echo "fetched $@ from dev-kit $(DEV_KIT_VERSION)" >&2
 
 # treefmt drives gofmt (via golangci-lint), yamlfmt, shfmt and mdformat from one
 # config. LOCALGOBIN goes on PATH so it picks up the pinned golangci-lint from
@@ -229,8 +240,9 @@ _require-formatters:
 	done; \
 	if [ -n "$$missing" ]; then \
 		echo "error: missing formatter(s):$$missing" >&2; \
-		echo "       they ship with the dev-kit flake — run 'nix flake update dev-kit'" >&2; \
-		echo "       and commit flake.lock, or enter the dev shell with 'direnv allow'." >&2; \
+		echo "       they ship with the dev-kit flake. If flake.nix pins a dev-kit" >&2; \
+		echo "       tag, bump it to match DEV_KIT_VERSION ($(DEV_KIT_VERSION)); otherwise run" >&2; \
+		echo "       'nix flake update dev-kit'. Commit flake.lock, then 'direnv allow'." >&2; \
 		exit 1; \
 	fi
 
@@ -276,11 +288,11 @@ mod: ## run go mod tidy, download, verify
 	@$(GO) mod download
 	@$(GO) mod verify
 
-# Order-only on DEV_KIT_CONFIGS so a direct `make golangci-lint` on a fresh
-# clone, or a parallel `make -j lint`, cannot run before .golangci.yml is there
-# and silently lint with golangci-lint's own defaults.
+# Order-only on the config so a direct `make golangci-lint` on a fresh clone, or
+# a parallel `make -j lint`, cannot run before .golangci.yml is there and
+# silently lint with golangci-lint's own defaults.
 .PHONY: golangci-lint
-golangci-lint: $(GOLANGCI_LINT) | $(DEV_KIT_CONFIGS) ## run golangci-lint
+golangci-lint: $(GOLANGCI_LINT) | $(DEV_KIT_GOLANGCI_CONFIG) ## run golangci-lint
 	$(GOLANGCI_LINT) run -v
 
 # Cached rather than piped to bash like repo-settings: this is a `make test`
@@ -365,11 +377,13 @@ _COMMON_MK_SELF_UPDATE := $(shell \
   stored=$$(cat .common.mk-version 2>/dev/null); \
   if [ "$$stored" != "$(DEV_KIT_VERSION)" ]; then \
     rm -f .common.mk-checked .common.mk-download; \
-    while read -r f; do \
-      [ -n "$$f" ] || continue; \
-      git ls-files --error-unmatch "$$f" >/dev/null 2>&1 || rm -f "$$f"; \
-    done < $(DEV_KIT_CONFIGS_MARKER) 2>/dev/null; \
-    rm -f $(DEV_KIT_CONFIGS_MARKER); \
+    if [ -f $(DEV_KIT_CONFIGS_MARKER) ]; then \
+      while read -r f; do \
+        [ -n "$$f" ] || continue; \
+        git ls-files --error-unmatch "$$f" >/dev/null 2>&1 || rm -f "$$f"; \
+      done < $(DEV_KIT_CONFIGS_MARKER); \
+      rm -f $(DEV_KIT_CONFIGS_MARKER); \
+    fi; \
   elif find .common.mk-checked -mmin -60 2>/dev/null | grep -q .; then \
     exit 0; \
   fi; \

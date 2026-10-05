@@ -49,7 +49,7 @@
         kind
         kubectl
         kubernetes-helm
-        mdformat
+        (mdformat.withPlugins (ps: [ ps.mdformat-gfm ]))
         shellcheck
         shfmt
         treefmt
