@@ -17,27 +17,93 @@ Copy the files from `example/` into your project and adjust them for your needs.
 
 The included `common.mk` provides:
 
-| Target                      | Description                                                |
-| ---                         | ---                                                        |
-| `help`                      | Display all available targets                              |
-| `clean`                     | Remove the `bin/` directory                                |
-| `mod`                       | Run `go mod tidy`, `download`, and `verify`                |
-| `golangci-lint`             | Run golangci-lint                                          |
-| `shellcheck`                | Run shellcheck on shell scripts                            |
-| `scan`                      | Scan for vulnerabilities using osv-scanner                 |
-| `setup-local-cluster`       | Create a Kind cluster for local development                |
-| `repo-settings`             | Reconcile GitHub repository settings                       |
-| `envtest-binaries-sideload` | Populate the envtest cache from upstream K8s/etcd releases |
+| Target                      | Description                                                                                  |
+| --------------------------- | -------------------------------------------------------------------------------------------- |
+| `help`                      | Display all available targets                                                                |
+| `clean`                     | Remove the `bin/` directory                                                                  |
+| `fmt`                       | Format every file in the repository                                                          |
+| `lint`                      | Check formatting, then run shellcheck and, when the repository has a `go.mod`, golangci-lint |
+| `fmt-all`                   | Formatting only (what `fmt` calls)                                                           |
+| `lint-all`                  | Fail if any file is not formatted (what `lint` calls)                                        |
+| `mod`                       | Run `go mod tidy`, `download`, and `verify`                                                  |
+| `golangci-lint`             | Run golangci-lint                                                                            |
+| `shellcheck`                | Run shellcheck on shell scripts                                                              |
+| `scan`                      | Scan for vulnerabilities using osv-scanner                                                   |
+| `setup-local-cluster`       | Create a Kind cluster for local development                                                  |
+| `repo-settings`             | Reconcile GitHub repository settings                                                         |
+| `envtest-binaries-sideload` | Populate the envtest cache from upstream K8s/etcd releases                                   |
+
+### Formatting and linting
+
+Formatting is **opt-in**. Set it in the project `Makefile` before
+`-include common.mk`, next to `DEV_KIT_VERSION`:
+
+```make
+DEV_KIT_FORMATTING := on
+```
+
+While it is off, no formatting runs: `fmt` does nothing beyond whatever the
+project's own `fmt:` rule does, and `lint` runs `shellcheck` and
+`golangci-lint` exactly as before, fetching only `.golangci.yml`.
+
+This is opt-in because a repository that still defines its own `fmt:` or `lint:`
+recipe would otherwise have `fmt-all`/`lint-all` merged in as prerequisites
+silently on its next `DEV_KIT_VERSION` bump — make appends prerequisites without
+warning — and start failing on every YAML, Markdown and shell file it has never
+formatted. Run the one-time `make fmt-all` commit first, then switch it on
+deliberately.
+
+One formatter front-end for the whole repository. `treefmt` drives gofmt (via
+`golangci-lint fmt`, so import order stays configured in one place), `yamlfmt`,
+`shfmt` and `mdformat`.
+
+```sh
+make fmt     # writes
+make lint    # fails on drift, then shellcheck and golangci-lint (Go repos)
+```
+
+The Go steps are conditional on a `go.mod` in the repository root: without one,
+`lint` skips golangci-lint, `fmt` does not install it, `.golangci.yml` is not
+fetched, and treefmt is passed `--allow-missing-formatter` so it does not insist
+on a formatter it will never call. None of that needs configuring by hand.
+
+`treefmt.toml`, `.golangci.yml` and `.editorconfig` are fetched from dev-kit at
+the pinned `DEV_KIT_VERSION` the first time they are needed, and refetched when
+that version changes. A repository that commits its own copy of one of these
+files keeps it. The fetch rule only fires for a file that is absent, and an
+alternate spelling counts as an override (`.golangci.yaml`, `.treefmt.toml`).
+Add the bootstrapped ones to `.gitignore`, together with `.common.mk-configs`,
+next to the existing `common.mk` entry — `.common.mk-configs` records what was
+fetched so that a `DEV_KIT_VERSION` bump only ever removes files this mechanism
+created, never a hand-written override that is not committed yet.
+
+Refresh happens when the `DEV_KIT_VERSION` string changes. With a moving ref
+(`main`) the configs are therefore fetched once and not refreshed again, while
+`common.mk` itself keeps updating via its hourly content check.
+
+`shfmt` reads its style from `.editorconfig`, so an editor and `make fmt` cannot
+disagree about shell scripts.
+
+Repositories extend the entry points by adding prerequisites rather than
+redefining them, which keeps the recipe in `common.mk`:
+
+```make
+fmt: license-headers
+lint: license-headers-check
+```
 
 ### Variables
 
-| Variable             | Default                     | Description                       |
-| ---                  | ---                         | ---                               |
-| `BUILD_PATH`         | `$(shell pwd)`              | Base directory for local binaries |
-| `LOCALBIN`           | `$(BUILD_PATH)/bin`         | Directory for installed binaries  |
-| `OSV_SCANNER_CONFIG` | `./.osv-scanner.toml`       | Path to osv-scanner configuration |
-| `OS`                 | `$(shell $(GO) env GOOS)`   | Current Operating System          |
-| `ARCH`               | `$(shell $(GO) env GOARCH)` | Current CPU architecture          |
+| Variable             | Default                                    | Description                                                                                                                          |
+| -------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `BUILD_PATH`         | `$(shell pwd)`                             | Base directory for local binaries                                                                                                    |
+| `LOCALBIN`           | `$(BUILD_PATH)/bin`                        | Directory for installed binaries                                                                                                     |
+| `OSV_SCANNER_CONFIG` | `./.osv-scanner.toml`                      | Path to osv-scanner configuration                                                                                                    |
+| `DEV_KIT_FORMATTING` | `off`                                      | `on` enables the shared `fmt`/`lint` formatting. Set it before `-include common.mk`                                                  |
+| `DEV_KIT_CONFIGS`    | `.editorconfig .golangci.yml treefmt.toml` | Shared configs to bootstrap; set to empty to opt out. Each file is skipped automatically when the repo overrides or does not need it |
+| `TREEFMT_ARGS`       | derived                                    | Extra treefmt flags. Defaults to `--allow-missing-formatter` in repos without a `go.mod`, empty otherwise                            |
+| `OS`                 | `$(shell $(GO) env GOOS)`                  | Current Operating System                                                                                                             |
+| `ARCH`               | `$(shell $(GO) env GOARCH)`                | Current CPU architecture                                                                                                             |
 
 Any binary defined in your `tools.lock` is also available as a Make target
 (e.g. `make $(CONTROLLER_GEN)`). Take a look at the variables defined in
@@ -122,7 +188,7 @@ It configures:
 The repository settings are configurable via make variables (set them in your `Makefile` or pass them on the command line, e.g. `make repo-settings REPO_STATUS_CHECKS='["CI","lint"]' REPO_RULESET_BRANCHES='["release/*"]'`):
 
 | Variable                               | Default | Description                                                                                                                                                                                                               |
-| ---                                    | ---     | ---                                                                                                                                                                                                                       |
+| -------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `REPO_ALLOW_MERGE_COMMIT`              | `true`  | Allow merge commits in the merge strategy                                                                                                                                                                                 |
 | `REPO_ALLOW_SQUASH_MERGE`              | `false` | Allow squash merging                                                                                                                                                                                                      |
 | `REPO_ALLOW_REBASE_MERGE`              | `false` | Allow rebase merging                                                                                                                                                                                                      |
@@ -140,11 +206,11 @@ The repo ships composite actions that consuming repositories reference directly.
 Pin them to a SHA with a version comment, as the action-pin check requires. The
 `<40-char-sha>` placeholders below are not copy-pasteable — substitute real digests:
 
-| Action                                | Description                                                    |
-| ---                                   | ---                                                            |
-| `.github/actions/setup-nix`           | Install upstream Nix and enable the shared Cachix cache        |
-| `.github/actions/get-go-version`      | Extract the Go version from `flake.nix`                        |
-| `.github/actions/diff-check`          | Fail if a command left uncommitted changes behind              |
+| Action                           | Description                                             |
+| -------------------------------- | ------------------------------------------------------- |
+| `.github/actions/setup-nix`      | Install upstream Nix and enable the shared Cachix cache |
+| `.github/actions/get-go-version` | Extract the Go version from `flake.nix`                 |
+| `.github/actions/diff-check`     | Fail if a command left uncommitted changes behind       |
 
 `setup-nix` replaces the two-step Nix installer + Cachix preamble that every
 job needs before it can use `nix develop` as its shell. Secrets are not visible
@@ -167,18 +233,18 @@ jobs:
       - run: make test
 ```
 
-| Input                | Default            | Description                                                              |
-| ---                  | ---                | ---                                                                      |
-| `cachix-name`        | `opendefensecloud` | Cachix cache to use                                                      |
-| `cachix-auth-token`  | `''`               | Auth token; empty falls back to a read-only cache, as on fork PRs        |
-| `cachix-signing-key` | `''`               | Signing key; empty disables pushing to the cache                         |
+| Input                | Default            | Description                                                       |
+| -------------------- | ------------------ | ----------------------------------------------------------------- |
+| `cachix-name`        | `opendefensecloud` | Cachix cache to use                                               |
+| `cachix-auth-token`  | `''`               | Auth token; empty falls back to a read-only cache, as on fork PRs |
+| `cachix-signing-key` | `''`               | Signing key; empty disables pushing to the cache                  |
 
 ### Default git hooks
 
 The dev shell installs the following git hooks automatically:
 
 | Hook          | Stage        | Description                                                                                                               |
-| ---           | ---          | ---                                                                                                                       |
+| ------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------- |
 | `fmt`         | `pre-commit` | Runs `make fmt`                                                                                                           |
 | `lint`        | `pre-commit` | Runs `make lint`                                                                                                          |
 | `osv-scanner` | `pre-commit` | Runs `make scan` on dependency file changes (disabled by default — see [Vulnerability scanning](#vulnerability-scanning)) |

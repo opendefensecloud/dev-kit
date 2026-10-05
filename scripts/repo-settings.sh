@@ -21,7 +21,7 @@ set -euo pipefail
 #   DEV_KIT_VERSION                        dev-kit version to fetch the workflow from
 #   GH, JQ                                 commands used to talk to GitHub and build JSON
 
-"$GH" auth status >/dev/null 2>&1 || {
+"$GH" auth status > /dev/null 2>&1 || {
   echo "error: gh is not authenticated; run 'gh auth login'" >&2
   exit 1
 }
@@ -47,7 +47,7 @@ fi
 allowed_merge_methods=$(
   # shellcheck disable=SC2016 # $variables belong to jq, not the shell
   "$JQ" -cn \
-    --argjson merge  "$REPO_ALLOW_MERGE_COMMIT" \
+    --argjson merge "$REPO_ALLOW_MERGE_COMMIT" \
     --argjson squash "$REPO_ALLOW_SQUASH_MERGE" \
     --argjson rebase "$REPO_ALLOW_REBASE_MERGE" \
     '[
@@ -68,8 +68,8 @@ echo "Reconciling settings for $REPO..."
 echo "  Syncing labels..."
 while IFS=';' read -r name color desc; do
   [ -z "$name" ] && continue
-  "$GH" label create "$name" --repo "$REPO" --color "$color" --description "$desc" --force 2>/dev/null
-done <<'EOF'
+  "$GH" label create "$name" --repo "$REPO" --color "$color" --description "$desc" --force 2> /dev/null
+done << 'EOF'
 bug;d73a4a;Something isn't working
 documentation;0075ca;Improvements or additions to documentation
 duplicate;cfd3d7;This issue or pull request already exists
@@ -99,11 +99,11 @@ echo "  Configuring merge strategy..."
   -f allow_squash_merge="$REPO_ALLOW_SQUASH_MERGE" \
   -f allow_rebase_merge="$REPO_ALLOW_REBASE_MERGE" \
   -f delete_branch_on_merge=true \
-  -f allow_auto_merge=true >/dev/null
+  -f allow_auto_merge=true > /dev/null
 
 echo "  Enabling secret scanning..."
 "$GH" api "repos/$REPO" -X PATCH \
-  --input <(echo '{"security_and_analysis":{"secret_scanning":{"status":"enabled"}}}') >/dev/null
+  --input <(echo '{"security_and_analysis":{"secret_scanning":{"status":"enabled"}}}') > /dev/null
 
 RULESET_JSON=$(
   # shellcheck disable=SC2016 # $variables belong to jq, not the shell
@@ -149,12 +149,12 @@ echo "    branch up-to-date: $REPO_REQUIRE_BRANCH_UP_TO_DATE"
 echo "    required status checks: $REPO_STATUS_CHECKS_EFFECTIVE"
 echo "    admin bypass: $REPO_ADMIN_BYPASS"
 
-existing=$("$GH" api "repos/$REPO/rulesets" -q '.[] | select(.name=="protect-main") | .id' 2>/dev/null || true)
+existing=$("$GH" api "repos/$REPO/rulesets" -q '.[] | select(.name=="protect-main") | .id' 2> /dev/null || true)
 if [ -n "$existing" ]; then
-  "$GH" api "repos/$REPO/rulesets/$existing" -X PUT --input <(echo "$RULESET_JSON") >/dev/null
+  "$GH" api "repos/$REPO/rulesets/$existing" -X PUT --input <(echo "$RULESET_JSON") > /dev/null
   echo "    Updated existing ruleset (id: $existing)"
 else
-  "$GH" api "repos/$REPO/rulesets" -X POST --input <(echo "$RULESET_JSON") >/dev/null
+  "$GH" api "repos/$REPO/rulesets" -X POST --input <(echo "$RULESET_JSON") > /dev/null
   echo "    Created new ruleset"
 fi
 

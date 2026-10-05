@@ -35,6 +35,7 @@ JQ ?= jq
 KIND ?= kind
 KUBECTL ?= kubectl
 SHELLCHECK ?= shellcheck
+TREEFMT ?= treefmt
 YQ ?= yq
 
 # External prerequisites (not managed by flake.nix or tools.lock)
@@ -128,7 +129,7 @@ clean:
 
 .PHONY: shellcheck
 shellcheck:  ## run shellcheck
-	$(SHELLCHECK) $$(git ls-files '*\.sh')
+	@git ls-files -z '*.sh' | xargs -0r $(SHELLCHECK)
 
 OSV_SCANNER_CONFIG ?= ./.osv-scanner.toml
 .PHONY: scan
@@ -185,6 +186,101 @@ setup-local-cluster: ## Set up a Kind cluster for local development if it does n
 			$(KIND) create cluster --name $(KIND_CLUSTER) $(if $(KIND_CONFIG),--config $(KIND_CONFIG)) ;; \
 	esac
 
+##@ Formatting and linting
+
+# Shared configuration shipped from dev-kit, fetched only when absent.
+# The list is static and each file's decision is made inside the recipe, when
+# the rule actually runs.
+DEV_KIT_CONFIGS ?= .editorconfig .golangci.yml treefmt.toml
+
+# golangci-lint needs only its own config, so that `lint` with formatting off
+# never pulls .editorconfig or treefmt.toml in as untracked files. Empty when
+# the repo opted out of fetching it, since no rule then exists to make it.
+DEV_KIT_GOLANGCI_CONFIG := $(filter .golangci.yml,$(DEV_KIT_CONFIGS))
+
+# Records what was fetched, so a version bump only ever removes files this
+# mechanism created itself, never a hand-written override not yet committed.
+DEV_KIT_CONFIGS_MARKER := .common.mk-configs
+
+# A repository overrides a file by committing its own copy, including under the
+# alternate spellings the org already uses: treefmt reads treefmt.toml before
+# .treefmt.toml, and an untracked .golangci.yml alongside a committed
+# .golangci.yaml would trip diff-check.
+$(DEV_KIT_CONFIGS):
+	@case '$@' in \
+	.golangci.yml) \
+		if [ -e .golangci.yaml ] || [ ! -e go.mod ]; then exit 0; fi ;; \
+	treefmt.toml) \
+		if [ -e .treefmt.toml ]; then exit 0; fi ;; \
+	esac; \
+	curl --fail -sSL \
+		'https://raw.githubusercontent.com/opendefensecloud/dev-kit/$(DEV_KIT_VERSION)/$@' \
+		-o '$@.dev-kit-download'; \
+	mv '$@.dev-kit-download' '$@'; \
+	if ! grep -qxF '$@' $(DEV_KIT_CONFIGS_MARKER) 2>/dev/null; then \
+		echo '$@' >> $(DEV_KIT_CONFIGS_MARKER); \
+	fi; \
+	echo "fetched $@ from dev-kit $(DEV_KIT_VERSION)" >&2
+
+# treefmt drives gofmt (via golangci-lint), yamlfmt, shfmt and mdformat from one
+# config. LOCALGOBIN goes on PATH so it picks up the pinned golangci-lint from
+# tools.lock rather than whatever happens to be installed.
+# A repository with no go.mod has no golangci-lint to install.
+TREEFMT_ARGS ?= $(if $(wildcard go.mod),,--allow-missing-formatter)
+_TREEFMT_GO_TOOL := $(if $(wildcard go.mod),$(GOLANGCI_LINT))
+
+# The formatters come from the dev-kit flake, which consumers pin separately
+# from DEV_KIT_VERSION. Bumping the Makefile without bumping flake.lock is a
+# common mistake, and the bare "command not found" does not say so.
+.PHONY: _require-formatters
+_require-formatters:
+	@missing=; \
+	for tool in $(TREEFMT) yamlfmt shfmt mdformat; do \
+		command -v "$$tool" >/dev/null 2>&1 || missing="$$missing $$tool"; \
+	done; \
+	if [ -n "$$missing" ]; then \
+		echo "error: missing formatter(s):$$missing" >&2; \
+		echo "       they ship with the dev-kit flake. If flake.nix pins a dev-kit" >&2; \
+		echo "       tag, bump it to match DEV_KIT_VERSION ($(DEV_KIT_VERSION)); otherwise run" >&2; \
+		echo "       'nix flake update dev-kit'. Commit flake.lock, then 'direnv allow'." >&2; \
+		exit 1; \
+	fi
+
+# Order-only prerequisites (after the |) fetch the configs without making them
+# part of the up-to-date check.
+.PHONY: fmt-all
+fmt-all: _require-formatters $(_TREEFMT_GO_TOOL) | $(DEV_KIT_CONFIGS) ## Format every file in the repository
+	@PATH="$(LOCALGOBIN):$$PATH" $(TREEFMT) $(TREEFMT_ARGS)
+
+.PHONY: lint-all
+lint-all: _require-formatters $(_TREEFMT_GO_TOOL) | $(DEV_KIT_CONFIGS) ## Fail if any file is not formatted
+	@PATH="$(LOCALGOBIN):$$PATH" $(TREEFMT) --ci $(TREEFMT_ARGS)
+
+# Formatting is opt-in. A repository that still defines its own `fmt:`/`lint:`
+# recipe would otherwise have fmt-all/lint-all merged in as prerequisites
+# silently on the next DEV_KIT_VERSION bump, and start failing on every YAML,
+# Markdown and shell file it has never formatted. Set this in the project
+# Makefile *before* `-include common.mk`, next to DEV_KIT_VERSION, after running
+# the one-time `make fmt-all` commit:
+#
+#   DEV_KIT_FORMATTING := on
+#
+# With it off, `lint` behaves exactly as it did before this mechanism existed.
+DEV_KIT_FORMATTING ?= off
+ifeq ($(filter on off,$(DEV_KIT_FORMATTING)),)
+  $(error DEV_KIT_FORMATTING must be 'on' or 'off', got '$(DEV_KIT_FORMATTING)')
+endif
+_fmt_enabled = $(filter on,$(DEV_KIT_FORMATTING))
+
+# Public entry points. These names are what the flake git-hooks and every
+# workflow call, so they stay stable. A repository extends them by adding
+# prerequisites rather than redefining them.
+.PHONY: fmt
+fmt: $(if $(_fmt_enabled),fmt-all) ## Format code
+
+.PHONY: lint
+lint: $(if $(_fmt_enabled),lint-all) shellcheck $(if $(wildcard go.mod),golangci-lint) ## Check formatting and run all linters
+
 ##@ Common golang targets
 .PHONY: mod
 mod: ## run go mod tidy, download, verify
@@ -192,8 +288,11 @@ mod: ## run go mod tidy, download, verify
 	@$(GO) mod download
 	@$(GO) mod verify
 
+# Order-only on the config so a direct `make golangci-lint` on a fresh clone, or
+# a parallel `make -j lint`, cannot run before .golangci.yml is there and
+# silently lint with golangci-lint's own defaults.
 .PHONY: golangci-lint
-golangci-lint: $(GOLANGCI_LINT) ## run golangci-lint
+golangci-lint: $(GOLANGCI_LINT) | $(DEV_KIT_GOLANGCI_CONFIG) ## run golangci-lint
 	$(GOLANGCI_LINT) run -v
 
 # Cached rather than piped to bash like repo-settings: this is a `make test`
@@ -269,11 +368,22 @@ update-common-mk-bootstrap: ## Rewrite the common.mk: rule in Makefile to the cu
 # If the remote content differs from the local file, deletes this file so that
 # Make's include-file-remake mechanism triggers the project's common.mk: rule on
 # its next restart — picking up the pre-downloaded .common.mk-download file.
+# Skipped when common.mk is tracked by git: that means this repository is either
+# dev-kit itself, where common.mk is the source file the check would delete, or a
+# consumer that deliberately committed a pinned copy.
 _COMMON_MK_SELF_UPDATE := $(shell \
+  if git ls-files --error-unmatch '$(_COMMON_MK_PATH)' >/dev/null 2>&1; then exit 0; fi; \
   hash_cmd=$$(command -v sha256sum >/dev/null 2>&1 && echo "sha256sum" || echo "shasum -a 256"); \
   stored=$$(cat .common.mk-version 2>/dev/null); \
   if [ "$$stored" != "$(DEV_KIT_VERSION)" ]; then \
     rm -f .common.mk-checked .common.mk-download; \
+    if [ -f $(DEV_KIT_CONFIGS_MARKER) ]; then \
+      while read -r f; do \
+        [ -n "$$f" ] || continue; \
+        git ls-files --error-unmatch "$$f" >/dev/null 2>&1 || rm -f "$$f"; \
+      done < $(DEV_KIT_CONFIGS_MARKER); \
+      rm -f $(DEV_KIT_CONFIGS_MARKER); \
+    fi; \
   elif find .common.mk-checked -mmin -60 2>/dev/null | grep -q .; then \
     exit 0; \
   fi; \
