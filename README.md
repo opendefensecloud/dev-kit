@@ -187,18 +187,18 @@ It configures:
 
 The repository settings are configurable via make variables (set them in your `Makefile` or pass them on the command line, e.g. `make repo-settings REPO_STATUS_CHECKS='["CI","lint"]' REPO_RULESET_BRANCHES='["release/*"]'`):
 
-| Variable                               | Default | Description                                                                                                                                                                                                               |
-| -------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `REPO_ALLOW_MERGE_COMMIT`              | `true`  | Allow merge commits in the merge strategy                                                                                                                                                                                 |
-| `REPO_ALLOW_SQUASH_MERGE`              | `false` | Allow squash merging                                                                                                                                                                                                      |
-| `REPO_ALLOW_REBASE_MERGE`              | `false` | Allow rebase merging                                                                                                                                                                                                      |
-| `REPO_REQUIRE_LAST_PUSH_APPROVAL`      | `false` | Require the most recent push to be approved before merging                                                                                                                                                                |
-| `REPO_ADMIN_BYPASS`                    | `true`  | When `false`, org admins cannot bypass the ruleset                                                                                                                                                                        |
-| `REPO_REQUIRED_APPROVING_REVIEW_COUNT` | `1`     | Number of approving reviews required to merge                                                                                                                                                                             |
-| `REPO_REQUIRE_CODE_OWNER_REVIEW`       | `false` | Require an approving review from code owners                                                                                                                                                                              |
-| `REPO_REQUIRE_BRANCH_UP_TO_DATE`       | `false` | Require branches to be up to date before merging (needs at least one `REPO_STATUS_CHECKS` value; `repo-settings` fails otherwise)                                                                                         |
+| Variable                               | Default | Description                                                                                                                                                                                                                                    |
+| -------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `REPO_ALLOW_MERGE_COMMIT`              | `true`  | Allow merge commits in the merge strategy                                                                                                                                                                                                      |
+| `REPO_ALLOW_SQUASH_MERGE`              | `false` | Allow squash merging                                                                                                                                                                                                                           |
+| `REPO_ALLOW_REBASE_MERGE`              | `false` | Allow rebase merging                                                                                                                                                                                                                           |
+| `REPO_REQUIRE_LAST_PUSH_APPROVAL`      | `false` | Require the most recent push to be approved before merging                                                                                                                                                                                     |
+| `REPO_ADMIN_BYPASS`                    | `true`  | When `false`, org admins cannot bypass the ruleset                                                                                                                                                                                             |
+| `REPO_REQUIRED_APPROVING_REVIEW_COUNT` | `1`     | Number of approving reviews required to merge                                                                                                                                                                                                  |
+| `REPO_REQUIRE_CODE_OWNER_REVIEW`       | `false` | Require an approving review from code owners                                                                                                                                                                                                   |
+| `REPO_REQUIRE_BRANCH_UP_TO_DATE`       | `false` | Require branches to be up to date before merging (needs at least one `REPO_STATUS_CHECKS` value; `repo-settings` fails otherwise)                                                                                                              |
 | `REPO_STATUS_CHECKS`                   | `[]`    | JSON array of status-check contexts that must pass (e.g. `["CI","update-action-pins / Check action pins"]`); each job name is used as-is, so contexts with spaces work; the `required_status_checks` rule is only added when this is non-empty |
-| `REPO_RULESET_BRANCHES`                | `[]`    | JSON array of additional branch patterns the ruleset applies to (e.g. `["release/*"]`); short names are normalized to `refs/heads/...`; the default branch is always protected                                            |
+| `REPO_RULESET_BRANCHES`                | `[]`    | JSON array of additional branch patterns the ruleset applies to (e.g. `["release/*"]`); short names are normalized to `refs/heads/...`; the default branch is always protected                                                                 |
 
 ### GitHub Actions
 
@@ -247,7 +247,7 @@ and calls dev-kit. Pin each stub to a SHA like any other action; Renovate bumps
 them together with `DEV_KIT_VERSION`.
 
 | Workflow                    | Stub triggers                                          | Needs                           |
-| ---                         | ---                                                    | ---                             |
+| --------------------------- | ------------------------------------------------------ | ------------------------------- |
 | `update-action-pins.yml`    | `pull_request`                                         |                                 |
 | `conventional-commits.yml`  | `pull_request` (opened, edited, synchronize, reopened) | `.commitlintrc.yml` in the repo |
 | `osv-scanner.yml`           | `pull_request`, `push` to main, weekly                 | optional `scan-args` input      |

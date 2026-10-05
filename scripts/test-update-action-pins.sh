@@ -7,7 +7,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CHECK="$(yq '.jobs.check-pins.steps[] | select(.name == "Verify all actions are pinned to a SHA") | .run' \
   "$ROOT/.github/workflows/update-action-pins.yml")"
-[[ -n "$CHECK" ]] || { echo "FAIL: pin check step not found"; exit 1; }
+[[ -n "$CHECK" ]] || {
+  echo "FAIL: pin check step not found"
+  exit 1
+}
 
 SHA=0123456789abcdef0123456789abcdef01234567
 fail=0
@@ -18,7 +21,7 @@ expect() {
   dir="$(mktemp -d)"
   mkdir -p "$dir/.github/$(dirname "$file")"
   printf '%s\n' "$content" > "$dir/.github/$file"
-  if (cd "$dir" && bash -c "$CHECK") >/dev/null 2>&1; then got=pass; else got=fail; fi
+  if (cd "$dir" && bash -c "$CHECK") > /dev/null 2>&1; then got=pass; else got=fail; fi
   rm -rf "$dir"
   if [[ "$got" == "$want" ]]; then
     echo "ok   $desc"
