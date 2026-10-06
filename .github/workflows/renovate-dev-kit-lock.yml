@@ -19,6 +19,10 @@ on:
         description: Renovate's branch for the dev-kit group.
         type: string
         default: renovate/dev-kit
+      renovate-actor:
+        description: Login of the Renovate app that authors the pull requests.
+        type: string
+        default: renovate[bot]
     secrets:
       DEV_KIT_BOT_APP_CLIENT_ID:
         required: true
@@ -36,7 +40,7 @@ jobs:
     if: >-
       github.event.pull_request.head.ref == inputs.branch &&
       github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.user.login == 'renovate[bot]'
+      github.event.pull_request.user.login == inputs.renovate-actor
     runs-on: ubuntu-24.04
     concurrency:
       group: renovate-dev-kit-lock-${{ github.event.pull_request.number }}
