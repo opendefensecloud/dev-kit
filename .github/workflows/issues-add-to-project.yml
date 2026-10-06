@@ -18,7 +18,7 @@ on:
 jobs:
   add-to-project:
     name: Add issue to project
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Authenticates with ADD_TO_PROJECT_PAT, so the workflow GITHUB_TOKEN needs no scopes.
     permissions: {}
     steps:
