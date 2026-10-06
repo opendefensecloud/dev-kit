@@ -38,12 +38,12 @@ reset() {
   rm -rf go.mod flake.nix Dockerfile examples
 }
 
-write_go_mod()    { printf 'module example.com/x\n\ngo %s\n' "$1" > go.mod; }
-write_flake()     { printf '{\n  outputs = {\n    devShells.default = mkShell {\n      goVersion = "%s";\n    };\n  };\n}\n' "$1" > flake.nix; }
+write_go_mod() { printf 'module example.com/x\n\ngo %s\n' "$1" > go.mod; }
+write_flake() { printf '{\n  outputs = {\n    devShells.default = mkShell {\n      goVersion = "%s";\n    };\n  };\n}\n' "$1" > flake.nix; }
 # The literal `--platform=$BUILDPLATFORM` matters: it is what Solar and ARC
 # write, and the extraction has to skip the flag to reach the image tag.
 write_dockerfile() {
-  cat > Dockerfile <<'EOF'
+  cat > Dockerfile << 'EOF'
 # Build the manager binary
 FROM --platform=$BUILDPLATFORM golang:__TAG__ AS builder
 RUN make build
@@ -93,7 +93,7 @@ run_test "go.mod alone" 0 "Go version pins agree: 1.27.0"
 reset
 write_go_mod 1.27.0
 write_flake 1.27.0
-cat > Dockerfile <<'EOF'
+cat > Dockerfile << 'EOF'
 FROM --platform=$BUILDPLATFORM golang:1.27.0 AS builder
 FROM golang:1.26.6 AS tools
 EOF
@@ -122,7 +122,7 @@ run_test "non-version tag is rejected" 1 "cannot read a Go version from the gola
 reset
 write_go_mod 1.27.0
 write_flake 1.27.0
-cat > Dockerfile <<'EOF'
+cat > Dockerfile << 'EOF'
 FROM --platform=$BUILDPLATFORM golang:1.27.0 AS builder
 FROM golang:1.27.0-alpine3.22 AS tools
 EOF
@@ -132,7 +132,7 @@ run_test "same version, different variants" 0 "Go version pins agree: 1.27.0"
 reset
 write_go_mod 1.27.0
 write_flake 1.27.0
-cat > Dockerfile <<'EOF'
+cat > Dockerfile << 'EOF'
 from golang:1.26.6 AS builder
 EOF
 run_test "lowercase from is not skipped" 1 "Dockerfile 1.26.6"
@@ -141,7 +141,7 @@ run_test "lowercase from is not skipped" 1 "Dockerfile 1.26.6"
 reset
 write_go_mod 1.27.0
 write_flake 1.27.0
-cat > Dockerfile <<'EOF'
+cat > Dockerfile << 'EOF'
   FROM golang:1.26.6 AS builder
 EOF
 run_test "indented FROM is not skipped" 1 "Dockerfile 1.26.6"

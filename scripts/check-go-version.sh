@@ -25,8 +25,8 @@ if [ -n "${DOCKERFILE:-}" ]; then
   read -r -a dockerfiles <<< "$DOCKERFILE"
 else
   mapfile -t dockerfiles < <(
-    git ls-files -- '*Dockerfile' '*Dockerfile.*' '*.Dockerfile' 2>/dev/null ||
-      find . -name '*Dockerfile*' -not -path './bin/*' -print 2>/dev/null
+    git ls-files -- '*Dockerfile' '*Dockerfile.*' '*.Dockerfile' 2> /dev/null ||
+      find . -name '*Dockerfile*' -not -path './bin/*' -print 2> /dev/null
   )
 fi
 

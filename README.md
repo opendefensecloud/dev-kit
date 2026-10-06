@@ -180,11 +180,11 @@ when controller-tools has no archive for the requested version, which also needs
 A Go project pins its version in up to three places, and a bump that updates only
 some of them fails in a workflow that does not mention the file that is wrong:
 
-| File         | Pin                        | What it drives             |
-| ---          | ---                        | ---                        |
-| `go.mod`     | `go <version>`             | the language version       |
-| `flake.nix`  | `goVersion = "<version>";` | the dev shell and CI       |
-| `Dockerfile` | `FROM ... golang:<tag>`    | the build image            |
+| File         | Pin                        | What it drives       |
+| ------------ | -------------------------- | -------------------- |
+| `go.mod`     | `go <version>`             | the language version |
+| `flake.nix`  | `goVersion = "<version>";` | the dev shell and CI |
+| `Dockerfile` | `FROM ... golang:<tag>`    | the build image      |
 
 `check-go-version` asserts they agree, skipping any file the repository does not
 have — a library without a `Dockerfile` still passes. **Every tracked Dockerfile
