@@ -338,15 +338,15 @@ keeps one small stub per workflow, which sets the triggers and the permissions
 and calls dev-kit. Pin each stub to a SHA like any other action; Renovate bumps
 them together with `DEV_KIT_VERSION`.
 
-| Workflow                    | Stub triggers                                          | Needs                           |
-| --------------------------- | ------------------------------------------------------ | ------------------------------- |
-| `update-action-pins.yml`    | `pull_request`                                         |                                 |
-| `conventional-commits.yml`  | `pull_request` (opened, edited, synchronize, reopened) | `.commitlintrc.yml` in the repo |
-| `osv-scanner.yml`           | `pull_request`, `push` to main, weekly                 | optional `scan-args` input      |
-| `issues-add-labels.yaml`    | `issues` (opened, reopened)                            |                                 |
-| `issues-add-to-project.yml` | `issues`, `pull_request` (opened)                      | `ADD_TO_PROJECT_PAT` secret     |
-| `renovate-auto-approve.yml` | `pull_request`                                         | see the header of the workflow  |
-| `renovate-dev-kit-lock.yml` | `pull_request` (opened, synchronize, reopened)         | `DEV_KIT_BOT_APP_*` org secrets |
+| Workflow                    | Stub triggers                                                      | Needs                           |
+| --------------------------- | ------------------------------------------------------------------ | ------------------------------- |
+| `update-action-pins.yml`    | `pull_request`                                                     |                                 |
+| `conventional-commits.yml`  | `pull_request` (opened, edited, synchronize, reopened)             | `.commitlintrc.yml` in the repo |
+| `osv-scanner.yml`           | `pull_request`, `push` to main, weekly                             | optional `scan-args` input      |
+| `issues-add-labels.yaml`    | `issues` (opened, reopened)                                        |                                 |
+| `issues-add-to-project.yml` | `issues`, `pull_request` (opened)                                  | `ADD_TO_PROJECT_PAT` secret     |
+| `renovate-auto-approve.yml` | `pull_request` (opened, reopened, synchronize, labeled, unlabeled) | see the header of the workflow  |
+| `renovate-dev-kit-lock.yml` | `pull_request` (opened, synchronize, reopened)                     | `DEV_KIT_BOT_APP_*` org secrets |
 
 No stub triggers on `merge_group`, as no repo uses a merge queue. A repo that
 turns one on must add the trigger to every stub whose check it requires, and
