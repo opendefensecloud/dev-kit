@@ -21,4 +21,9 @@ jobs:
   approve:
     uses: ./.github/workflows/renovate-auto-approve.yml
     permissions:
+      # Both are needed, and a job-level block replaces the workflow-level one
+      # rather than adding to it. A called workflow cannot elevate what the
+      # caller grants, so omitting contents here leaves the repository activity
+      # API — the pusher check, and the revoke path — without access.
+      contents: read
       pull-requests: write
