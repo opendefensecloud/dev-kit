@@ -1,0 +1,111 @@
+name: flake-closure-diff
+
+# Reusable only. Reports what a flake.lock change actually does.
+#
+# A lock bump is unreviewable as a diff: one opaque `rev`/`narHash` line for
+# nixpkgs silently moves every package in the dev shell — the Go toolchain,
+# golangci-lint, treefmt, kubectl, helm. Renovate's weekly lockFileMaintenance
+# refreshes every input at once and is merged by a human, who has nothing to
+# look at. This builds the shell both sides of the change and posts the
+# package-level difference to the job summary.
+#
+# Advisory: it reports, it never fails on a difference. A lock bump being large
+# is not an error, it is a thing somebody should see.
+
+on:
+  workflow_call:
+    inputs:
+      attribute:
+        description: Flake attribute whose closure to compare.
+        type: string
+        default: .#devShells.x86_64-linux.default
+      runs-on:
+        description: Runner for the job.
+        type: string
+        default: ubuntu-24.04
+    secrets:
+      cachix-auth-token:
+        required: false
+      cachix-signing-key:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  closure-diff:
+    name: Diff flake closures
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The installer and cache are inlined rather than taken from setup-nix,
+      # as in renovate-dev-kit-lock: a reusable workflow cannot use the `./`
+      # path, which resolves against the caller, and a full self-reference
+      # would need the release's own SHA before that commit exists. Keep these
+      # two pins in step with .github/actions/setup-nix.
+      - name: Install nix
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+        with:
+          determinate: false
+          diagnostic-endpoint: ''
+      - name: Use the shared Cachix cache
+        uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+        with:
+          name: opendefensecloud
+          authToken: ${{ secrets.cachix-auth-token }}
+          signingKey: ${{ secrets.cachix-signing-key }}
+
+      # Both sides are realised as profiles, which is the supported way to get a
+      # dev shell's closure as a store path. The base side usually comes
+      # straight from the cache, since it is what the last run built.
+      - name: Realise the closure before the change
+        id: before
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          ATTR: ${{ inputs.attribute }}
+        run: |
+          work="$(mktemp -d)"
+          git worktree add --detach "$work" "$BASE_SHA"
+          if nix develop --profile "$work/.profile" "$work$ATTR" --command true 2>"$work/err"; then
+            echo "path=$work/.profile" >> "$GITHUB_OUTPUT"
+          else
+            # A base that does not evaluate is not this job's problem to report;
+            # the build jobs will say so. Skip rather than fail.
+            echo "::notice::base revision does not evaluate, skipping the closure diff"
+            sed 's/^/  /' "$work/err" | tail -5
+            echo "path=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Realise the closure after the change
+        id: after
+        if: steps.before.outputs.path != ''
+        env:
+          ATTR: ${{ inputs.attribute }}
+        run: |
+          nix develop --profile .profile "$ATTR" --command true
+          echo "path=.profile" >> "$GITHUB_OUTPUT"
+
+      - name: Report the difference
+        if: steps.before.outputs.path != ''
+        env:
+          BEFORE: ${{ steps.before.outputs.path }}
+          AFTER: ${{ steps.after.outputs.path }}
+        run: |
+          diff="$(nix store diff-closures "$BEFORE" "$AFTER")"
+          {
+            echo "## Dev shell closure diff"
+            echo
+            if [ -z "$diff" ]; then
+              echo "No package-level change: the lock moved but the shell is identical."
+            else
+              echo '```'
+              echo "$diff"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Also in the log, so it is greppable from a failed neighbouring job.
+          echo "$diff"
