@@ -1,0 +1,24 @@
+name: renovate-auto-approve
+
+# dev-kit calling its own reusable workflow, the way a consumer calls it. The
+# reference is local rather than `opendefensecloud/dev-kit/...@<sha>`: a
+# same-repo reusable workflow can be addressed by path, which keeps this honest
+# — it always exercises the version in the branch — and avoids a self-reference
+# that would need a release's own SHA before that commit exists.
+#
+# The label triggers are not optional. Renovate adds the automerge label, often
+# after opening the PR, and the workflow revokes its approval when a PR gains
+# the block label or loses the automerge one. Without `labeled`/`unlabeled` the
+# stub silently never fires for either.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  approve:
+    uses: ./.github/workflows/renovate-auto-approve.yml
+    permissions:
+      pull-requests: write

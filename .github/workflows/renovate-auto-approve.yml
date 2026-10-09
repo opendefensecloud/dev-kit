@@ -1,12 +1,18 @@
 name: renovate-auto-approve
 
-# Reusable workflow. A consuming repo triggers it on pull_request and calls it:
+# Reusable workflow. A consuming repo calls it like this — the label triggers are
+# not optional, since Renovate usually adds the automerge label after opening the
+# PR, and the revoke path reacts to labels changing:
 #
+#   on:
+#     pull_request:
+#       types: [opened, reopened, synchronize, labeled, unlabeled]
+#   permissions:
+#     contents: read
 #   jobs:
 #     approve:
 #       uses: opendefensecloud/dev-kit/.github/workflows/renovate-auto-approve.yml@<sha-or-tag>
 #       permissions:
-#         contents: read
 #         pull-requests: write
 #
 # It approves a Renovate PR that carries the automerge label, added by Renovate,
