@@ -339,6 +339,24 @@ check-go-version: $(CHECK_GO_VERSION) ## Assert go.mod, flake.nix and the Docker
 	@GO_MOD='$(GO_MOD)' FLAKE_NIX='$(FLAKE_NIX)' DOCKERFILE='$(DOCKERFILE)' \
 		bash $(CHECK_GO_VERSION)
 
+CHECK_DEV_KIT_PINS := $(LOCALBIN)/check-dev-kit-pins-$(subst /,~,$(DEV_KIT_VERSION)).sh
+$(CHECK_DEV_KIT_PINS): | $(LOCALBIN)
+	@curl --fail -sSL \
+		"https://raw.githubusercontent.com/opendefensecloud/dev-kit/$(DEV_KIT_VERSION)/scripts/check-dev-kit-pins.sh" \
+		-o $@.download
+	@mv $@.download $@
+
+WORKFLOWS ?= $(BUILD_PATH)/.github/workflows
+FLAKE_LOCK ?= $(BUILD_PATH)/flake.lock
+# Named DEV_KIT_MAKEFILE rather than MAKEFILE, which make treats specially.
+DEV_KIT_MAKEFILE ?= $(BUILD_PATH)/Makefile
+
+.PHONY: check-dev-kit-pins
+check-dev-kit-pins: $(CHECK_DEV_KIT_PINS) ## Assert every dev-kit reference in this repository resolves to the same release
+	@WORKFLOWS='$(WORKFLOWS)' DEV_KIT_MAKEFILE='$(DEV_KIT_MAKEFILE)' \
+		FLAKE_NIX='$(FLAKE_NIX)' FLAKE_LOCK='$(FLAKE_LOCK)' \
+		bash $(CHECK_DEV_KIT_PINS)
+
 # Install local tools
 TOOL_LOCK := $(BUILD_PATH)/tools.lock
 

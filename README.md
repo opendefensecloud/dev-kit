@@ -33,6 +33,7 @@ The included `common.mk` provides:
 | `repo-settings`             | Reconcile GitHub repository settings                                                         |
 | `envtest-binaries-sideload` | Populate the envtest cache from upstream K8s/etcd releases                                   |
 | `check-go-version`          | Assert every Go version pin in the repository agrees                                         |
+| `check-dev-kit-pins`        | Assert every dev-kit reference names the same release                                        |
 
 ### Formatting and linting
 
@@ -203,6 +204,67 @@ Related: the dev shell resolves `goVersion` from `go-overlay`, which `flake.lock
 pins. A Go patch released after that lock was written does not exist in the shell
 yet; the shell says so and names the fix (`nix flake update go-overlay`) rather
 than failing with a missing attribute.
+
+### Keeping the dev-kit pins in step
+
+A consumer pins dev-kit in up to four places, and only the workflow pins are both
+immutable and reviewed:
+
+| Where                | Pin               | Mutable?                   |
+| -------------------- | ----------------- | -------------------------- |
+| `.github/workflows/` | `@<sha> # <tag>`  | no                         |
+| `Makefile`           | `DEV_KIT_VERSION` | yes — a tag                |
+| `flake.nix`          | the flake input   | yes — a tag                |
+| `flake.lock`         | the resolved rev  | no, but rewritten by `nix` |
+
+`check-dev-kit-pins` asserts they all name the same release. Add it to your `lint`
+target; absent sources are skipped, so a consumer without a flake still passes.
+Override `WORKFLOWS`, `DEV_KIT_MAKEFILE`, `FLAKE_NIX` or `FLAKE_LOCK` for a
+non-default layout.
+
+Why the lock matters: `flake.nix` pins by **tag**, and the lock turns that tag into
+a commit — a conversion `renovate-dev-kit-lock` performs unattended. A tag moved
+between a release and a relock would be adopted with no meaningful review, since
+the visible diff is a `narHash`, and this flake is the shell your CI runs in.
+Comparing the lock against the workflow pins turns that into a failed check.
+
+A reference that is not `@<sha> # vX.Y.Z` fails the check rather than being
+skipped: one the comparison cannot read is how drift gets in unseen, and a
+tag-pinned reference is mutable besides. Commented-out references are ignored, so
+the stubs in this README can be pasted as examples.
+
+This detects; it does not prevent. Immutable release tags on this repository would
+make the tag itself trustworthy.
+
+### Seeing what a `flake.lock` bump actually changes
+
+A lock bump is unreviewable as a diff: one opaque `rev` for `nixpkgs` moves every
+package in the shell — the Go toolchain, `golangci-lint`, `treefmt`, `kubectl`.
+Renovate's weekly `lockFileMaintenance` refreshes every input at once and is
+merged by a human who has nothing to look at.
+
+`flake-closure-diff.yml` builds the shell both sides of the change and posts the
+package-level difference to the job summary. Advisory — it reports, it never fails
+on a difference:
+
+```yaml
+name: Flake closure diff
+on:
+  pull_request:
+    paths: ["flake.lock", "flake.nix"]
+permissions:
+  contents: read
+jobs:
+  closure-diff:
+    uses: opendefensecloud/dev-kit/.github/workflows/flake-closure-diff.yml@<40-char-sha> # <tag>
+    secrets:
+      cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      cachix-signing-key: ${{ secrets.CACHIX_SIGNING_KEY }}
+```
+
+Pass `attribute` for a shell that is not `devShells.x86_64-linux.default` (no `.#`
+prefix — both sides are addressed as `<path>#<attribute>`). The base side usually
+comes from the cache, since it is what the last run built.
 
 ### Repository settings
 

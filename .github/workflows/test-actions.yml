@@ -50,6 +50,8 @@ jobs:
         run: scripts/test-update-action-pins.sh
       - name: Test check-go-version.sh
         run: scripts/test-check-go-version.sh
+      - name: Test check-dev-kit-pins.sh
+        run: scripts/test-check-dev-kit-pins.sh
 
   test-setup-nix:
     needs: shellcheck
