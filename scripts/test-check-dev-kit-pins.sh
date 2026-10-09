@@ -180,7 +180,40 @@ workflow v3.1.0
 makefile v3.1.0
 lock "$SHA_A"
 printf '{\n  inputs.dev-kit.url = "github:opendefensecloud/dev-kit/main";\n}\n' > flake.nix
-run_test "a flake input on a branch rather than a tag" 1 "not as github:opendefensecloud/dev-kit/vX.Y.Z"
+run_test "a flake input on a branch rather than a tag" 1 "not a release tag"
+
+# --- a comment cannot stand in for the active reference ------------------
+reset
+makefile v3.1.0
+flake v3.1.0
+mkdir -p .github/workflows
+cat > .github/workflows/x.yml <<- EOF
+	jobs:
+	  a:
+	    steps:
+	      - uses: opendefensecloud/dev-kit/.github/actions/setup-nix@main # was opendefensecloud/dev-kit/.github/actions/setup-nix@ # v3.1.0
+EOF
+run_test "a pin smuggled into a trailing comment" 1 "not pinned as @<sha>"
+
+reset
+workflow v3.1.0
+makefile v3.1.0
+lock "$SHA_A"
+cat > flake.nix <<- EOF
+	{
+	  # url = "github:opendefensecloud/dev-kit/v3.1.0";
+	  inputs.dev-kit.url = "github:opendefensecloud/dev-kit/main";
+	}
+EOF
+run_test "a commented-out flake url beside a branch ref" 1 "not a release tag"
+
+# --- a lock that cannot be compared --------------------------------------
+reset
+workflow v3.1.0
+makefile v3.1.0
+flake v3.1.0
+echo '{"nodes": {"nixpkgs": {"locked": {"rev": "abc"}}}}' > flake.lock
+run_test "a lock with no dev-kit rev beside a flake that wants one" 1 "has no rev for it"
 
 # --- nothing to check at all ----------------------------------------------
 reset

@@ -262,8 +262,9 @@ jobs:
       cachix-signing-key: ${{ secrets.CACHIX_SIGNING_KEY }}
 ```
 
-Pass `attribute` for a shell that is not `.#devShells.x86_64-linux.default`. The
-base side usually comes from the cache, since it is what the last run built.
+Pass `attribute` for a shell that is not `devShells.x86_64-linux.default` (no `.#`
+prefix — both sides are addressed as `<path>#<attribute>`). The base side usually
+comes from the cache, since it is what the last run built.
 
 ### Repository settings
 

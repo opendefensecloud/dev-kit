@@ -37,9 +37,12 @@ DEV_KIT_MAKEFILE="${DEV_KIT_MAKEFILE:-Makefile}"
 FLAKE_NIX="${FLAKE_NIX:-flake.nix}"
 FLAKE_LOCK="${FLAKE_LOCK:-flake.lock}"
 
-# The one accepted form for a reference in a workflow. Used both to reject
-# anything else and to read the pins, so the two cannot drift apart.
-strict="opendefensecloud/dev-kit/[^@]+@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+"
+# The accepted form of the reference GitHub actually resolves — the token after
+# `uses:`, with no comment in it. The tag comment is validated separately,
+# because a pin pattern sitting in a trailing comment says nothing about what
+# runs: `uses: …@main # …@<sha> # v3.0.0` would otherwise read as pinned.
+strict_ref="^opendefensecloud/dev-kit/[^@[:space:]]+@[0-9a-f]{40}$"
+strict_tag="^v[0-9]+\.[0-9]+\.[0-9]+$"
 
 fail() {
   echo "error: $*" >&2
@@ -60,28 +63,39 @@ tag=""
 checked=()
 
 if [ -d "$WORKFLOWS" ]; then
-  # Every workflow line mentioning dev-kit, as file:line:content, minus YAML
-  # comments: a commented-out reference is documentation — dev-kit's own
-  # README stubs are written that way — not a pin.
-  mapfile -t refs < <(
-    grep -rnE "opendefensecloud/dev-kit/" "$WORKFLOWS" |
-      grep -vE "^[^:]*:[0-9]+:[[:space:]]*#" || true
+  # Only `uses:` lines, and only where no `#` precedes `uses:` — a commented-out
+  # reference is documentation, which is how the README stubs are written.
+  mapfile -t lines < <(
+    grep -rnE "^[^#]*uses:[[:space:]]*opendefensecloud/dev-kit/" "$WORKFLOWS" || true
   )
 
-  # Anything referencing dev-kit that is not in the strict form is reported
-  # rather than skipped: a reference the comparison cannot read is how drift
-  # gets in unseen, and a tag-pinned reference is mutable on top of that.
-  mapfile -t loose < <(printf '%s\n' "${refs[@]+"${refs[@]}"}" | grep -vE "$strict" | grep . || true)
+  loose=()
+  pins=()
+  for line in "${lines[@]+"${lines[@]}"}"; do
+    where="${line%%:*}:$(cut -d: -f2 <<< "$line")"
+    content="${line#*:*:}"
+
+    # The reference GitHub resolves, and the comment that is meant to name its
+    # tag — read as separate tokens, never as a pattern somewhere in the line.
+    ref="$(sed -E 's/.*uses:[[:space:]]*([^[:space:]]+).*/\1/' <<< "$content")"
+    tag_comment="$(sed -E 's/[^#]*//; s/^#[[:space:]]*//; s/[[:space:]]*$//' <<< "$content")"
+
+    if [[ ! $ref =~ $strict_ref ]] || [[ ! $tag_comment =~ $strict_tag ]]; then
+      loose+=("$where: $ref${tag_comment:+ # $tag_comment}")
+      continue
+    fi
+    pins+=("${ref##*@} $tag_comment")
+  done
+
+  # A reference the comparison cannot read is how drift gets in unseen, and a
+  # tag-pinned one is mutable besides, so it fails rather than being skipped.
   if [ "${#loose[@]}" -gt 0 ]; then
     printf 'error: these dev-kit references are not pinned as @<sha> # vX.Y.Z:\n' >&2
     printf '  %s\n' "${loose[@]}" >&2
     exit 1
   fi
 
-  mapfile -t pins < <(
-    printf '%s\n' "${refs[@]+"${refs[@]}"}" |
-      grep -oE "[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+" | sort -u
-  )
+  mapfile -t pins < <(printf '%s\n' "${pins[@]+"${pins[@]}"}" | grep . | sort -u || true)
   if [ "${#pins[@]}" -gt 1 ]; then
     printf 'error: workflows disagree on which dev-kit commit to use:\n' >&2
     printf '  %s\n' "${pins[@]}" >&2
@@ -89,7 +103,7 @@ if [ -d "$WORKFLOWS" ]; then
   fi
   if [ "${#pins[@]}" -eq 1 ]; then
     sha="${pins[0]%% *}"
-    tag="${pins[0]##*# }"
+    tag="${pins[0]##* }"
     checked+=("workflows=$tag")
   fi
 fi
@@ -122,12 +136,19 @@ if [ -f "$DEV_KIT_MAKEFILE" ] && [ "$is_dev_kit" = false ]; then
 fi
 
 # url = "github:opendefensecloud/dev-kit/vX.Y.Z";
+#
+# Nix comments are stripped first, so a commented-out url cannot stand in for
+# the active one — and the ref is read from inside the quotes rather than
+# matched anywhere in the line.
+flake_has_dev_kit=false
 if [ -f "$FLAKE_NIX" ]; then
-  if grep -q "github:opendefensecloud/dev-kit/" "$FLAKE_NIX"; then
-    flake_tag="$(sed -nE 's#.*github:opendefensecloud/dev-kit/(v[0-9]+\.[0-9]+\.[0-9]+).*#\1#p' "$FLAKE_NIX")"
-    [ -n "$flake_tag" ] ||
-      fail "$FLAKE_NIX references dev-kit but not as github:opendefensecloud/dev-kit/vX.Y.Z"
-    expect_tag "$FLAKE_NIX" "$flake_tag"
+  flake_body="$(sed 's/#.*//' "$FLAKE_NIX")"
+  if grep -q "github:opendefensecloud/dev-kit/" <<< "$flake_body"; then
+    flake_has_dev_kit=true
+    flake_ref="$(sed -nE 's#.*"github:opendefensecloud/dev-kit/([^"]*)".*#\1#p' <<< "$flake_body" | head -1)"
+    [[ $flake_ref =~ $strict_tag ]] ||
+      fail "$FLAKE_NIX pins the dev-kit input at '${flake_ref:-?}', not a release tag (vX.Y.Z)"
+    expect_tag "$FLAKE_NIX" "$flake_ref"
   fi
 fi
 
@@ -141,8 +162,18 @@ fi
 
 # The resolved commit in the lock, which is the value an unattended relock
 # writes. Only comparable when a workflow pin gave us an immutable commit.
-if [ -f "$FLAKE_LOCK" ] && [ -n "$sha" ]; then
+if [ -f "$FLAKE_LOCK" ]; then
   lock_sha="$(jq -r '.nodes["dev-kit"].locked.rev // empty' "$FLAKE_LOCK")"
+
+  # A lock with no dev-kit rev, next to a flake that declares the input, is a
+  # stale or hand-edited lock. Skipping the comparison there would report
+  # agreement on the strength of the two mutable tags alone.
+  if [ -z "$lock_sha" ] && [ "$flake_has_dev_kit" = true ]; then
+    fail "$FLAKE_NIX declares the dev-kit input but $FLAKE_LOCK has no rev for it — run \`nix flake lock\`"
+  fi
+fi
+
+if [ -f "$FLAKE_LOCK" ] && [ -n "$sha" ]; then
   if [ -n "$lock_sha" ] && [ "$lock_sha" != "$sha" ]; then
     cat >&2 <<- EOF
 			error: $FLAKE_LOCK resolved dev-kit $tag to a different commit than the workflows pin.

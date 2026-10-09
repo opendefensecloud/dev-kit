@@ -16,9 +16,11 @@ on:
   workflow_call:
     inputs:
       attribute:
-        description: Flake attribute whose closure to compare.
+        description: >-
+          Flake output attribute whose closure to compare, with no `.#` prefix:
+          both sides are addressed as <path>#<attribute>.
         type: string
-        default: .#devShells.x86_64-linux.default
+        default: devShells.x86_64-linux.default
       runs-on:
         description: Runner for the job.
         type: string
@@ -70,14 +72,21 @@ jobs:
         run: |
           work="$(mktemp -d)"
           git worktree add --detach "$work" "$BASE_SHA"
-          if nix develop --profile "$work/.profile" "$work$ATTR" --command true 2>"$work/err"; then
-            echo "path=$work/.profile" >> "$GITHUB_OUTPUT"
-          else
-            # A base that does not evaluate is not this job's problem to report;
-            # the build jobs will say so. Skip rather than fail.
-            echo "::notice::base revision does not evaluate, skipping the closure diff"
-            sed 's/^/  /' "$work/err" | tail -5
+          # Evaluation and build are separated deliberately. A base that does not
+          # evaluate is expected — it may predate the flake or the attribute —
+          # and is a notice. A base that evaluates but will not build is not
+          # expected, and silence would hide it, so it is a warning rather than a
+          # failure: this job is advisory, and the PR did not break the base.
+          if ! nix eval --raw "$work#$ATTR.drvPath" > /dev/null 2>"$work/eval-err"; then
+            echo "::notice::base revision does not evaluate $ATTR, skipping the closure diff"
+            sed 's/^/  /' "$work/eval-err" | tail -5
             echo "path=" >> "$GITHUB_OUTPUT"
+          elif ! nix develop --profile "$work/.profile" "$work#$ATTR" --command true 2>"$work/build-err"; then
+            echo "::warning::base revision evaluates but its shell does not build, skipping the closure diff"
+            sed 's/^/  /' "$work/build-err" | tail -5
+            echo "path=" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=$work/.profile" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Realise the closure after the change
@@ -86,7 +95,7 @@ jobs:
         env:
           ATTR: ${{ inputs.attribute }}
         run: |
-          nix develop --profile .profile "$ATTR" --command true
+          nix develop --profile .profile ".#$ATTR" --command true
           echo "path=.profile" >> "$GITHUB_OUTPUT"
 
       - name: Report the difference
