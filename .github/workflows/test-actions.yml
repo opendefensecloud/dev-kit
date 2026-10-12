@@ -33,7 +33,7 @@ jobs:
   shellcheck:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Run ShellCheck on action and dev-kit scripts
         run: shellcheck .github/actions/*/*.sh scripts/*.sh
 
@@ -41,7 +41,7 @@ jobs:
     needs: shellcheck
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Test verify-clean.sh
         run: .github/actions/diff-check/test-verify-clean.sh
       - name: Test extract-go-version.sh
@@ -57,7 +57,7 @@ jobs:
     needs: shellcheck
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Set up nix with the shared Cachix cache
         uses: ./.github/actions/setup-nix
         with:
