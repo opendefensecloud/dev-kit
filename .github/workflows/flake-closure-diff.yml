@@ -96,7 +96,12 @@ jobs:
           ATTR: ${{ inputs.attribute }}
         run: |
           nix develop --profile .profile ".#$ATTR" --command true
-          echo "path=.profile" >> "$GITHUB_OUTPUT"
+          # Absolute, because nix reads a relative path as a flake reference:
+          # it resolves the profile symlink and then rejects the store path with
+          # "is not a flake (because it's not a directory)". An absolute path
+          # under the store is recognised as a store path, which is what
+          # diff-closures wants.
+          echo "path=$PWD/.profile" >> "$GITHUB_OUTPUT"
 
       - name: Report the difference
         if: steps.before.outputs.path != ''
