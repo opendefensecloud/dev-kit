@@ -1,7 +1,12 @@
 name: Label issues
 
-permissions:
-  contents: read
+# Empty on purpose. A caller can only hand down what its own job has, and the
+# stub in the README calls this with `issues: write` alone — a job-level block
+# replaces the workflow-level one rather than merging, so the caller's job has
+# no `contents`. Asking for it here fails the caller at startup, before a
+# single job runs.
+permissions: {}
+
 on:
   issues:
     types:
@@ -11,6 +16,8 @@ on:
 jobs:
   label_issues:
     runs-on: ubuntu-24.04
+    # `gh issue edit` needs issues:write and nothing else — no checkout, no
+    # other API surface.
     permissions:
       issues: write
     steps:
