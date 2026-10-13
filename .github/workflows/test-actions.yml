@@ -2,15 +2,17 @@ name: Test Actions
 
 # Consuming repositories pin this repo by SHA, so anything shipped from here
 # reaches their CI unchanged. The triggers therefore cover what is shipped —
-# the composite actions and their pins, common.mk, the scripts and the flake —
-# not just the shell scripts. A pin bump in an action.yml used to change what
-# every consumer runs without a single job executing here.
+# the composite actions and their pins, common.mk, the scripts, the flake, the
+# reusable workflows, and the README caller stubs consumers copy — not just the
+# shell scripts. A pin bump in an action.yml used to change what every consumer
+# runs without a single job executing here, and a permissions change in a
+# reusable workflow can break every caller at startup.
 on:
   pull_request:
     paths:
       - '.github/actions/**'
-      - '.github/workflows/test-actions.yml'
-      - '.github/workflows/update-action-pins.yml'
+      - '.github/workflows/**'
+      - 'README.md'
       - 'common.mk'
       - 'flake.lock'
       - 'flake.nix'
@@ -19,8 +21,8 @@ on:
     branches: [main]
     paths:
       - '.github/actions/**'
-      - '.github/workflows/test-actions.yml'
-      - '.github/workflows/update-action-pins.yml'
+      - '.github/workflows/**'
+      - 'README.md'
       - 'common.mk'
       - 'flake.lock'
       - 'flake.nix'
@@ -53,6 +55,25 @@ jobs:
       - name: Test check-dev-kit-pins.sh
         run: scripts/test-check-dev-kit-pins.sh
 
+
+  # yq is not on the runner image but is in this repository's dev shell, so
+  # both steps run through it.
+  workflow-permissions:
+    needs: shellcheck
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Set up nix with the shared Cachix cache
+        uses: ./.github/actions/setup-nix
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          cachix-signing-key: ${{ secrets.CACHIX_SIGNING_KEY }}
+      - name: Test check-reusable-permissions.sh
+        run: nix develop --command scripts/test-check-reusable-permissions.sh
+      # Dogfood: the same rule against this repository's own reusable workflows,
+      # its in-repo callers, and the stubs in the README that consumers copy.
+      - name: This repository's own workflow permissions agree with its callers
+        run: nix develop --command scripts/check-reusable-permissions.sh
   test-setup-nix:
     needs: shellcheck
     runs-on: ubuntu-24.04
