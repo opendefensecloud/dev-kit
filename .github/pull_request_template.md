@@ -19,7 +19,7 @@ Closes #
 
 ## Checklist
 
-- [ ] Tests added/updated
-- [ ] No breaking changes (or upgrade path documented above)
+- [ ] Tests added/updated, or confirmed that no tests are required
+- [ ] No breaking changes, or upgrade path documented above
 - [ ] Readable commit history (squashed and cleaned up as desired)
 - [ ] AI code review considered and comments resolved
