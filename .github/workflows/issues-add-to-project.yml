@@ -1,7 +1,9 @@
 name: Add issues to project
 
-permissions:
-  contents: read
+# Empty on purpose. A caller can only hand down what its own job has, and the
+# stub in the README calls this with `permissions: {}`. Asking for anything
+# here fails the caller at startup, before a single job runs.
+permissions: {}
 
 on:
   issues:
