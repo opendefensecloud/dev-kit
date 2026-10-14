@@ -87,6 +87,7 @@ github-actions;80c4c6;PR created via GitHub action
 help-wanted;811857;Extra attention is needed
 good-first-issue;7057ff;Good for newcomers
 needs-triage;eab668;Issue that has not been reviewed
+needs-update;f9a03f;Issue that is outdated or incomplete and needs an update
 ok-to-image;0e8a16;PR is allowed to run container build
 ok-to-test;0e8a16;PR is allowed to be tested
 spike;b23adb;A task to research a question and resolve problems
