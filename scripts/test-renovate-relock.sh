@@ -73,8 +73,18 @@ run_test() {
   echo
 }
 
-called() { grep -qxF "$1" "$FAKE_CALLS" || { echo "FAIL: nix $1 was not called"; exit 1; }; }
-not_called() { ! grep -qxF "$1" "$FAKE_CALLS" || { echo "FAIL: nix $1 was called"; exit 1; }; }
+called() {
+  if ! grep -qxF "$1" "$FAKE_CALLS"; then
+    echo "FAIL: nix $1 was not called"
+    exit 1
+  fi
+}
+not_called() {
+  if grep -qxF "$1" "$FAKE_CALLS"; then
+    echo "FAIL: nix $1 was called"
+    exit 1
+  fi
+}
 
 # --- dev-kit branch --------------------------------------------------------
 reset
@@ -98,7 +108,10 @@ run_test "go-overlay current: nothing to commit" 0 "what=go-overlay changed=fals
 reset
 export FAKE_OVERLAY_NEWER=1 FAKE_GO_MISSING=1
 run_test "go-overlay lacks the Go version: fails" 1 "" renovate/go-version
-grep -q '::error::' "$TESTDIR/stderr" || { echo "FAIL: no ::error:: annotation"; exit 1; }
+grep -q '::error::' "$TESTDIR/stderr" || {
+  echo "FAIL: no ::error:: annotation"
+  exit 1
+}
 
 reset no-overlay
 run_test "no go-overlay input: only flake lock" 0 "what=dev-kit changed=false" renovate/go-version
@@ -109,7 +122,10 @@ reset
 export FAKE_OVERLAY_NEWER=1
 echo "=== go-branch argument is honoured ==="
 out="$("$ROOT/renovate-relock.sh" renovate/golang renovate/golang 2> /dev/null)"
-[ "$(printf '%s' "$out" | tr '\n' ' ')" = "what=go-overlay changed=true" ] || { echo "FAIL: $out"; exit 1; }
+[ "$(printf '%s' "$out" | tr '\n' ' ')" = "what=go-overlay changed=true" ] || {
+  echo "FAIL: $out"
+  exit 1
+}
 echo "PASS"
 echo
 

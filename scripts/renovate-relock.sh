@@ -23,8 +23,8 @@ go_branch=${2:-renovate/go-version}
 nix flake lock >&2
 
 what=dev-kit
-if [ "$head_ref" = "$go_branch" ] \
-    && jq -e '.nodes.root.inputs["go-overlay"]' flake.lock > /dev/null; then
+if [ "$head_ref" = "$go_branch" ] &&
+  jq -e '.nodes.root.inputs["go-overlay"]' flake.lock > /dev/null; then
   what=go-overlay
   nix flake update go-overlay >&2
   system=$(nix eval --impure --raw --expr builtins.currentSystem)
