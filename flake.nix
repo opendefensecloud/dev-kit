@@ -126,8 +126,6 @@
     devShells.default = self.lib.mkShell {
       inherit system;
       preCommitHooks = {
-        fmt.enable = false;
-        lint.enable = false;
         osv-scanner.enable = false;
         commitlint.enable = true;
       };
