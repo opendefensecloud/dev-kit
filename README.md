@@ -203,7 +203,8 @@ update group, so the image silently stays behind while everything else moves.
 Related: the dev shell resolves `goVersion` from `go-overlay`, which `flake.lock`
 pins. A Go patch released after that lock was written does not exist in the shell
 yet; the shell says so and names the fix (`nix flake update go-overlay`) rather
-than failing with a missing attribute.
+than failing with a missing attribute. On Renovate's Go PR,
+`renovate-dev-kit-lock` runs that refresh itself.
 
 ### Keeping the dev-kit pins in step
 
@@ -445,9 +446,12 @@ jobs:
       ADD_TO_PROJECT_PAT: ${{ secrets.ADD_TO_PROJECT_PAT }}
 ```
 
-`.github/workflows/renovate-dev-kit-lock.yml` commits `nix flake lock` to
-Renovate's `renovate/dev-kit` PR, which bumps the flake input tag but can't
-update `flake.lock`. It commits as the org's dev-kit GitHub App, so the commit
+`.github/workflows/renovate-dev-kit-lock.yml` commits a relocked `flake.lock`
+to two Renovate PRs that change `flake.nix` but can't update the lock:
+`renovate/dev-kit` (`nix flake lock` for the bumped tag) and
+`renovate/go-version` (`nix flake update go-overlay`, so the new `goVersion`
+exists in the shell; if go-overlay does not carry it yet, the job fails and can
+be re-run later). It commits as the org's dev-kit GitHub App, so the commit
 is signed and starts CI; any other PR skips it:
 
 ```yaml
