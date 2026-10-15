@@ -1,18 +1,12 @@
 name: renovate-dev-kit-lock
 
-# Reusable only. Commits a relocked flake.lock to two Renovate PRs, which
-# change flake.nix through regex managers that can't update the lock:
-#
-#   renovate/dev-kit     bumps the dev-kit tag. `nix flake lock` relocks only
-#                        inputs whose reference changed, i.e. dev-kit.
-#   renovate/go-version  bumps goVersion. No reference changes, so go-overlay,
-#                        which follows its branch, is refreshed explicitly:
-#                        the locked one predates the new Go release.
-#
-# Both are no-ops once the lock is current, so a re-run after its own commit
-# changes nothing. Without this, `nix develop` rewrites the lock in CI (dev-kit)
-# or cannot find the Go version at all (go-version). See "Governance workflows"
-# in the README for the stub.
+# Reusable only. Commits a relocked flake.lock to the two Renovate PRs that
+# change flake.nix through regex managers, which can't update the lock:
+# renovate/dev-kit (bumped tag) and renovate/go-version (goVersion, which needs
+# a newer go-overlay). scripts/renovate-relock.sh does the relocking, fetched
+# from the dev-kit commit this workflow was called at; it is a no-op once the
+# lock is current, so a re-run after its own commit changes nothing. See
+# "Governance workflows" in the README for the stub.
 #
 # Commits through the GitHub App's installation token, via the API: GitHub
 # signs the commit (required_signatures), and unlike GITHUB_TOKEN it starts CI
@@ -61,6 +55,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          path: repo
+          persist-credentials: false
+      # The relock script, from the dev-kit commit this workflow was called at.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: dev-kit
+          sparse-checkout: scripts/renovate-relock.sh
+          sparse-checkout-cone-mode: false
           persist-credentials: false
       - name: Install nix
         uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
@@ -70,32 +74,11 @@ jobs:
           diagnostic-endpoint: ''
       - name: Relock
         id: relock
+        working-directory: repo
         env:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
           GO_BRANCH: ${{ inputs.go-branch }}
-        run: |
-          nix flake lock
-          what=dev-kit
-          if [ "$HEAD_REF" = "$GO_BRANCH" ] \
-              && jq -e '.nodes.root.inputs["go-overlay"]' flake.lock > /dev/null; then
-            what=go-overlay
-            nix flake update go-overlay
-            # go-overlay adds a Go release up to a day after it ships. Until
-            # then the shell cannot evaluate; fail here, with dev-kit's own
-            # message, rather than commit a lock that does not help.
-            system=$(nix eval --impure --raw --expr builtins.currentSystem)
-            if ! nix eval --raw ".#devShells.$system.default.drvPath" > /dev/null; then
-              echo "::error::The dev shell does not evaluate with the newest go-overlay; if it lacks the Go version yet, re-run this job later."
-              exit 1
-            fi
-          fi
-          echo "what=$what" >> "$GITHUB_OUTPUT"
-          if git diff --quiet -- flake.lock; then
-            echo "flake.lock already matches flake.nix"
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
+        run: ../dev-kit/scripts/renovate-relock.sh "$HEAD_REF" "$GO_BRANCH" >> "$GITHUB_OUTPUT"
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         if: steps.relock.outputs.changed == 'true'
         id: app
@@ -117,7 +100,7 @@ jobs:
           # that push re-runs this workflow anyway.
           jq -n --arg repo "$REPO" --arg branch "$BRANCH" --arg head "$HEAD_SHA" \
             --arg headline "chore(deps): relock $WHAT in flake.lock" \
-            --arg lock "$(base64 -w0 flake.lock)" '{
+            --arg lock "$(base64 -w0 repo/flake.lock)" '{
               query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
               variables: { input: {
                 branch: { repositoryNameWithOwner: $repo, branchName: $branch },
