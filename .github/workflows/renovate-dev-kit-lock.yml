@@ -1,11 +1,18 @@
 name: renovate-dev-kit-lock
 
-# Reusable only. Commits `nix flake lock` to Renovate's dev-kit PR. It relocks
-# only inputs whose flake.nix reference changed, here the bumped dev-kit tag,
-# and is a no-op otherwise, so a re-run after its own commit changes nothing.
-# Renovate bumps the flake input tag with a regex manager, which can't update
-# flake.lock; without this, `nix develop` rewrites the lock in CI and any
-# diff-check fails. See "Governance workflows" in the README for the stub.
+# Reusable only. Commits a relocked flake.lock to two Renovate PRs, which
+# change flake.nix through regex managers that can't update the lock:
+#
+#   renovate/dev-kit     bumps the dev-kit tag. `nix flake lock` relocks only
+#                        inputs whose reference changed, i.e. dev-kit.
+#   renovate/go-version  bumps goVersion. No reference changes, so go-overlay,
+#                        which follows its branch, is refreshed explicitly:
+#                        the locked one predates the new Go release.
+#
+# Both are no-ops once the lock is current, so a re-run after its own commit
+# changes nothing. Without this, `nix develop` rewrites the lock in CI (dev-kit)
+# or cannot find the Go version at all (go-version). See "Governance workflows"
+# in the README for the stub.
 #
 # Commits through the GitHub App's installation token, via the API: GitHub
 # signs the commit (required_signatures), and unlike GITHUB_TOKEN it starts CI
@@ -19,6 +26,10 @@ on:
         description: Renovate's branch for the dev-kit group.
         type: string
         default: renovate/dev-kit
+      go-branch:
+        description: Renovate's branch for the Go version group.
+        type: string
+        default: renovate/go-version
       renovate-actor:
         description: Login of the Renovate app that authors the pull requests.
         type: string
@@ -35,10 +46,11 @@ permissions:
 jobs:
   relock:
     name: Relock dev-kit
-    # Only Renovate's own branch in this repo: fork PRs get no secrets, and a
+    # Only Renovate's own branches in this repo: fork PRs get no secrets, and a
     # same-named branch from someone else doesn't get a bot commit.
     if: >-
-      github.event.pull_request.head.ref == inputs.branch &&
+      (github.event.pull_request.head.ref == inputs.branch ||
+       github.event.pull_request.head.ref == inputs.go-branch) &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.user.login == inputs.renovate-actor
     runs-on: ubuntu-24.04
@@ -56,10 +68,28 @@ jobs:
           # Upstream Nix and no telemetry, as in setup-nix.
           determinate: false
           diagnostic-endpoint: ''
-      - name: Relock dev-kit
+      - name: Relock
         id: relock
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          GO_BRANCH: ${{ inputs.go-branch }}
         run: |
           nix flake lock
+          what=dev-kit
+          if [ "$HEAD_REF" = "$GO_BRANCH" ] \
+              && jq -e '.nodes.root.inputs["go-overlay"]' flake.lock > /dev/null; then
+            what=go-overlay
+            nix flake update go-overlay
+            # go-overlay adds a Go release up to a day after it ships. Until
+            # then the shell cannot evaluate; fail here, with dev-kit's own
+            # message, rather than commit a lock that does not help.
+            system=$(nix eval --impure --raw --expr builtins.currentSystem)
+            if ! nix eval --raw ".#devShells.$system.default.drvPath" > /dev/null; then
+              echo "::error::The dev shell does not evaluate with the newest go-overlay; if it lacks the Go version yet, re-run this job later."
+              exit 1
+            fi
+          fi
+          echo "what=$what" >> "$GITHUB_OUTPUT"
           if git diff --quiet -- flake.lock; then
             echo "flake.lock already matches flake.nix"
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -80,16 +110,18 @@ jobs:
           REPO: ${{ github.repository }}
           BRANCH: ${{ github.event.pull_request.head.ref }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          WHAT: ${{ steps.relock.outputs.what }}
         run: |
           # createCommitOnBranch, not git push: GitHub signs API commits.
           # expectedHeadOid makes it fail instead of clobbering a newer push;
           # that push re-runs this workflow anyway.
           jq -n --arg repo "$REPO" --arg branch "$BRANCH" --arg head "$HEAD_SHA" \
+            --arg headline "chore(deps): relock $WHAT in flake.lock" \
             --arg lock "$(base64 -w0 flake.lock)" '{
               query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
               variables: { input: {
                 branch: { repositoryNameWithOwner: $repo, branchName: $branch },
-                message: { headline: "chore(deps): relock dev-kit in flake.lock" },
+                message: { headline: $headline },
                 expectedHeadOid: $head,
                 fileChanges: { additions: [{ path: "flake.lock", contents: $lock }] }
               } }
