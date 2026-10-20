@@ -65,6 +65,7 @@ jobs:
     # reach the revoke path below.
     if: >-
       github.event_name == 'pull_request' &&
+      github.event.pull_request.state == 'open' &&
       github.event.pull_request.user.login == inputs.renovate-actor
     steps:
       - name: Approve an unmodified Renovate PR, or revoke a prior approval
