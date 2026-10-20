@@ -51,6 +51,27 @@ jobs:
             echo "Run 'GITHUB_TOKEN=\$(gh auth token) update-action-pins .github/' to fix."
             exit 1
           fi
+      - name: Verify every pin carries only its version comment
+        run: |
+          # zizmor's ref-version-mismatch audit compares the comment with the
+          # SHA only when the comment is `# <version>` and nothing else: without
+          # a comment, or with any text after the version, it skips the pin
+          # without a finding. That includes `# zizmor: ignore[...]`, so no
+          # ignore comment can sit next to a pin. Both patterns are anchored to
+          # the `uses:` value, so an `@<sha> # <version>` later in the comment
+          # doesn't count.
+          pin='^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*[^@[:space:]]+@[0-9a-f]{40}'
+          malformed=$(grep -rhE '^[[:space:]]*(-[[:space:]]+)?uses:' .github/ \
+            | tr -d "\"'" \
+            | grep -E "$pin([[:space:]]|\$)" \
+            | grep -vE "$pin[[:space:]]+#[[:space:]]+[[:alnum:]._+/-]+[[:space:]]*\$" || true)
+          if [[ -n "$malformed" ]]; then
+            echo "::error::Found pinned actions whose comment is not just their version:"
+            echo "$malformed"
+            echo ""
+            echo "Write the pin as 'uses: <action>@<sha> # <version>', with nothing after the version."
+            exit 1
+          fi
       - name: Verify no pin moved to a new commit under the same version
         if: github.event_name == 'pull_request'
         run: |

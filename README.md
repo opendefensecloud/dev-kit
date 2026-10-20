@@ -368,6 +368,11 @@ jobs:
     uses: opendefensecloud/dev-kit/.github/workflows/update-action-pins.yml@<40-char-sha> # <tag>
 ```
 
+It also fails when a pin's comment is anything but its version
+(`uses: <action>@<sha> # <version>`): zizmor checks the version against the SHA
+only in that form, and skips a pin without a comment or with more text after
+the version, a `# zizmor: ignore[...]` included.
+
 On pull requests it also fails when a pin's SHA changes but its version comment
 does not: new code under a version that was already reviewed means upstream
 moved the tag, or the PR swapped the SHA. Pins should name a full release tag

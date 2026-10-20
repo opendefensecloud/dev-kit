@@ -22,6 +22,7 @@ step() {
 }
 
 CHECK="$(step "Verify all actions are pinned to a SHA")"
+COMMENT_CHECK="$(step "Verify every pin carries only its version comment")"
 MOVE_CHECK="$(step "Verify no pin moved to a new commit under the same version")"
 
 SHA=0123456789abcdef0123456789abcdef01234567
@@ -41,13 +42,14 @@ report() {
 report bash "$(yq '.defaults.run.shell' "$ROOT/.github/workflows/update-action-pins.yml")" \
   "steps run with pipefail"
 
-# expect <pass|fail> <description> <file under .github/> <content>
+# expect <pass|fail> <description> <file under .github/> <content>: runs the
+# SHA check, or the step in $RUN when set.
 expect() {
   local want=$1 desc=$2 file=$3 content=$4 dir got
   dir="$(mktemp -d)"
   mkdir -p "$dir/.github/$(dirname "$file")"
   printf '%s\n' "$content" > "$dir/.github/$file"
-  if (cd "$dir" && bash -eo pipefail -c "$CHECK") > /dev/null 2>&1; then got=pass; else got=fail; fi
+  if (cd "$dir" && bash -eo pipefail -c "${RUN:-$CHECK}") > /dev/null 2>&1; then got=pass; else got=fail; fi
   rm -rf "$dir"
   report "$want" "$got" "$desc"
 }
@@ -65,6 +67,27 @@ expect fail "unpinned reusable workflow" workflows/a.yml "    uses: org/repo/.gi
 expect fail "unpinned composite action" actions/foo/action.yml "    - uses: actions/checkout@v7"
 expect fail "SHA only in the comment" workflows/a.yml "      - uses: actions/checkout@main # @$SHA"
 expect fail "short SHA" workflows/a.yml "      - uses: actions/checkout@${SHA:0:7}"
+
+RUN=$COMMENT_CHECK
+expect pass "version comment" workflows/a.yml "      - uses: actions/checkout@$SHA # v7.0.1"
+expect pass "quoted pin with a version comment" workflows/a.yml "      - uses: \"actions/checkout@$SHA\" # v7.0.1"
+expect pass "version without a v prefix" workflows/a.yml "      - uses: foo/bar@$SHA # 2.37.0"
+expect pass "local action without a comment" workflows/a.yml "      - uses: ./.github/actions/foo"
+expect pass "unpinned action, left to the SHA check" workflows/a.yml "      - uses: actions/checkout@v7"
+expect fail "no comment" workflows/a.yml "      - uses: actions/checkout@$SHA"
+expect fail "empty comment" workflows/a.yml "      - uses: actions/checkout@$SHA #"
+expect fail "no space after the hash" workflows/a.yml "      - uses: actions/checkout@$SHA #v7.0.1"
+expect fail "zizmor ignore after the version" workflows/a.yml \
+  "      - uses: actions/checkout@$SHA # v7.0.1 # zizmor: ignore[known-vulnerable-actions]"
+expect fail "zizmor ignore instead of the version" workflows/a.yml \
+  "      - uses: actions/checkout@$SHA # zizmor: ignore[known-vulnerable-actions]"
+expect fail "another pin and version at the end of the comment" workflows/a.yml \
+  "      - uses: actions/checkout@$SHA # v7.0.1 # zizmor: ignore[ref-version-mismatch] @$SHA # v7.0.1"
+expect fail "another uses: in the comment" workflows/a.yml \
+  "      - uses: actions/checkout@$SHA # v7.0.1 # uses: actions/checkout@$SHA # v7.0.1"
+expect pass "unpinned action with a pin in the comment, left to the SHA check" workflows/a.yml \
+  "      - uses: actions/checkout@v7 # @$SHA # v7.0.1"
+unset RUN
 
 OTHER=fedcba9876543210fedcba9876543210fedcba98
 
