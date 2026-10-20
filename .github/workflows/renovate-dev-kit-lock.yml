@@ -47,7 +47,7 @@ jobs:
        github.event.pull_request.head.ref == inputs.go-branch) &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.user.login == inputs.renovate-actor
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     concurrency:
       group: renovate-dev-kit-lock-${{ github.event.pull_request.number }}
       cancel-in-progress: true
