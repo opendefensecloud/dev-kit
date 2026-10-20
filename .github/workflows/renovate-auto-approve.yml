@@ -25,11 +25,11 @@ name: renovate-auto-approve
 # It approves a Renovate PR that carries the automerge label, added by Renovate,
 # and not the block label (security), and only while the branch still holds
 # exactly one commit, authored by Renovate and signed, and pushed by Renovate.
-# Once someone pushes
-# onto the branch it stops qualifying, because that change was never reviewed by
-# anyone. If a PR stops qualifying or later gains the block label, the workflow
-# revokes its own earlier approval so a human is required again. The merge
-# itself always stays gated on the repo's required status checks.
+# Once someone pushes onto the branch it stops qualifying, because that change
+# was never reviewed by anyone. If a PR stops qualifying (including losing the
+# automerge label) or later gains the block label, the workflow revokes its own
+# earlier approval so a human is required again. The merge itself always stays
+# gated on the repo's required status checks.
 #
 # Which update types are eligible (the automerge label) is decided by the
 # renovate-config presets, not here: github>opendefensecloud/renovate-config.
@@ -61,11 +61,11 @@ concurrency:
 jobs:
   auto-approve:
     runs-on: ubuntu-26.04
+    # No label condition: a PR that just lost the automerge label must still
+    # reach the revoke path below.
     if: >-
       github.event_name == 'pull_request' &&
-      github.event.pull_request.user.login == inputs.renovate-actor &&
-      (contains(github.event.pull_request.labels.*.name, inputs.automerge-label) ||
-       contains(github.event.pull_request.labels.*.name, inputs.block-label))
+      github.event.pull_request.user.login == inputs.renovate-actor
     steps:
       - name: Approve an unmodified Renovate PR, or revoke a prior approval
         env:
@@ -75,14 +75,17 @@ jobs:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
           LABEL: ${{ inputs.automerge-label }}
           BLOCK_LABEL: ${{ inputs.block-label }}
-          HAS_BLOCK: ${{ contains(github.event.pull_request.labels.*.name, inputs.block-label) }}
           RENOVATE_ACTOR: ${{ inputs.renovate-actor }}
         run: |
           set -euo pipefail
+          # Current labels, not the event payload's: runs can finish out of
+          # event order, and a stale payload would approve or revoke wrongly.
+          labels=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name')
+          has_label() { grep -qxF "$1" <<<"$labels"; }
           # Latest review state left by this workflow's identity (github-actions[bot]).
           latest_state=$(gh api "repos/$GH_REPO/pulls/$PR_NUMBER/reviews" \
             --jq 'map(select((.user.login // "" | ascii_downcase) | startswith("github-actions"))) | last | .state // empty')
-          if [ "$HAS_BLOCK" = "true" ]; then
+          if has_label "$BLOCK_LABEL"; then
             if [ "$latest_state" = "APPROVED" ]; then
               echo "PR now carries the $BLOCK_LABEL label; revoking the earlier automated approval."
               gh pr review "$PR_NUMBER" --request-changes \
@@ -103,6 +106,9 @@ jobs:
             fi
             exit 0
           }
+          if ! has_label "$LABEL"; then
+            reject "the PR does not carry the $LABEL label"
+          fi
           # The job-level gate only checks who opened the PR. Also check that
           # the branch holds exactly one commit, authored by Renovate, signed, and
           # pushed by Renovate, and that Renovate itself added the automerge label.
@@ -136,10 +142,11 @@ jobs:
             echo "Already approved by github-actions; nothing to do."
             exit 0
           fi
-          # Re-read labels right before approving: the block label may have been
-          # added after this run started, concurrently with this approval.
-          if gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name' | grep -qxF "$BLOCK_LABEL"; then
-            echo "PR now carries the $BLOCK_LABEL label; not approving."
+          # Re-read labels right before approving: they may have changed after
+          # this run started, concurrently with this approval.
+          labels=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name')
+          if has_label "$BLOCK_LABEL" || ! has_label "$LABEL"; then
+            echo "Labels changed while this run was checking; not approving."
             exit 0
           fi
           gh pr review "$PR_NUMBER" --approve \
