@@ -61,13 +61,13 @@ If your project uses private runners, whitelist the repository in the runner gro
 
 Copy the relevant workflows from `.github/workflows/` in this repository:
 
-| Workflow                    | Purpose                                                              |
-| --------------------------- | -------------------------------------------------------------------- |
-| `conventional-commits.yml`  | Validates PR titles and commit messages against Conventional Commits |
-| `issues-add-labels.yaml`    | Automatically adds `needs-triage` label to new issues                |
-| `issues-add-to-project.yml` | Adds new issues and PRs to the org project board                     |
-| `release-drafter.yaml`      | Drafts release notes from merged PRs                                 |
-| `update-action-pins.yml`    | Fails the PR if any action is not pinned to a SHA                    |
+| Workflow                    | Purpose                                                                                          |
+| --------------------------- | ------------------------------------------------------------------------------------------------ |
+| `conventional-commits.yml`  | Validates PR titles and commit messages against Conventional Commits                             |
+| `issues-add-labels.yaml`    | Automatically adds `needs-triage` label to new issues                                            |
+| `issues-add-to-project.yml` | Adds new issues and PRs to the org project board                                                 |
+| `release-drafter.yaml`      | Drafts release notes from merged PRs                                                             |
+| `update-action-pins.yml`    | Fails the PR if any action is not pinned to a SHA, or a pin's SHA changes under the same version |
 
 If using release-drafter, also copy `.github/release-drafter.yml` (the config file).
 

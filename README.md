@@ -368,6 +368,12 @@ jobs:
     uses: opendefensecloud/dev-kit/.github/workflows/update-action-pins.yml@<40-char-sha> # <tag>
 ```
 
+On pull requests it also fails when a pin's SHA changes but its version comment
+does not: new code under a version that was already reviewed means upstream
+moved the tag, or the PR swapped the SHA. Pins should name a full release tag
+(`# v7.0.1`, not `# v7`), since a major tag moves with every release and would
+trip the check on each update.
+
 `.github/workflows/conventional-commits.yml`:
 
 ```yaml
