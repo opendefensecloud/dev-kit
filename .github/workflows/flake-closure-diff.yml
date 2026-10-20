@@ -114,7 +114,7 @@ jobs:
             echo "## Dev shell closure diff"
             echo
             if [ -z "$diff" ]; then
-              echo "No package-level change: the lock moved but the shell is identical."
+              echo "No package-level change in the dev shell."
             else
               echo '```'
               echo "$diff"
