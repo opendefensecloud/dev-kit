@@ -50,6 +50,8 @@ jobs:
         run: .github/actions/get-go-version/test-extract-go-version.sh
       - name: Test the update-action-pins check
         run: scripts/test-update-action-pins.sh
+      - name: Test the audit-action-pins steps
+        run: scripts/test-audit-action-pins.sh
       - name: Test check-go-version.sh
         run: scripts/test-check-go-version.sh
       - name: Test check-dev-kit-pins.sh

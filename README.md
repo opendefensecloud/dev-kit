@@ -342,6 +342,7 @@ them together with `DEV_KIT_VERSION`.
 | Workflow                    | Stub triggers                                                      | Needs                           |
 | --------------------------- | ------------------------------------------------------------------ | ------------------------------- |
 | `update-action-pins.yml`    | `pull_request`                                                     |                                 |
+| `audit-action-pins.yml`     | `pull_request`, `workflow_dispatch`                                |                                 |
 | `conventional-commits.yml`  | `pull_request` (opened, edited, synchronize, reopened)             | `.commitlintrc.yml` in the repo |
 | `osv-scanner.yml`           | `pull_request`, `push` to main, weekly                             | optional `scan-args` input      |
 | `issues-add-labels.yaml`    | `issues` (opened, reopened)                                        |                                 |
@@ -378,6 +379,30 @@ does not: new code under a version that was already reviewed means upstream
 moved the tag, or the PR swapped the SHA. Pins should name a full release tag
 (`# v7.0.1`, not `# v7`), since a major tag moves with every release and would
 trip the check on each update.
+
+`.github/workflows/audit-action-pins.yml`:
+
+```yaml
+name: Audit Action Pins
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit-action-pins:
+    uses: opendefensecloud/dev-kit/.github/workflows/audit-action-pins.yml@<40-char-sha> # <tag>
+```
+
+It runs zizmor with the job's `GITHUB_TOKEN`, which zizmor needs to look up
+upstream tags and branches, and fails on an impostor commit or a version comment
+that doesn't match its SHA. Neither `# zizmor: ignore[...]` comments nor a
+`zizmor.yml` in the repo turn a finding off.
+
+On pull requests it only fails on pins the PR adds or changes: a pinned SHA's
+code never changes, so a finding on an untouched pin means upstream moved a tag,
+and would otherwise block every PR. A manual `workflow_dispatch` run audits
+every pin, e.g. when a repo adopts the workflow.
 
 `.github/workflows/conventional-commits.yml`:
 
@@ -483,7 +508,8 @@ jobs:
 
 A job from a reusable workflow reports as `<stub job> / <called job>`, so
 `REPO_STATUS_CHECKS` needs the new names after switching to a stub, e.g.
-`update-action-pins / Check action pins`, `conventional-commits / PR Title` and
+`update-action-pins / Check action pins`,
+`audit-action-pins / Audit action pins`, `conventional-commits / PR Title` and
 `conventional-commits / Commit Messages`. osv-scanner nests Google's reusable
 workflow one level deeper, so its scan reports as
 `osv-scanner / scan-pr / osv-scan`. Update the list and rerun `make repo-settings` in the same change, or the old
