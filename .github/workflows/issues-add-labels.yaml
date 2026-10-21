@@ -15,7 +15,7 @@ on:
   workflow_call:
 jobs:
   label_issues:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # `gh issue edit` needs issues:write and nothing else — no checkout, no
     # other API surface.
     permissions:
