@@ -139,15 +139,13 @@ jobs:
           if [ "$labeler" != "$RENOVATE_ACTOR" ]; then
             reject "the $LABEL label was added by '$labeler', not $RENOVATE_ACTOR"
           fi
-          if [ "$latest_state" = "APPROVED" ]; then
-            echo "Already approved by github-actions; nothing to do."
-            exit 0
-          fi
-          # Re-read labels right before approving: they may have changed after
-          # this run started, concurrently with this approval.
+          # Re-read labels: they may have changed after this run started.
           labels=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name')
           if has_label "$BLOCK_LABEL" || ! has_label "$LABEL"; then
-            echo "Labels changed while this run was checking; not approving."
+            reject "the labels changed while this run was checking"
+          fi
+          if [ "$latest_state" = "APPROVED" ]; then
+            echo "Already approved by github-actions; nothing to do."
             exit 0
           fi
           gh pr review "$PR_NUMBER" --approve \
