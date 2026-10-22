@@ -20,17 +20,8 @@ runs:
   using: composite
   steps:
     - name: Install nix
-      uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
-      with:
-        # Use upstream Nix, not the Determinate fork (avoids the
-        # determinate-nixd binary + FlakeHub auto-enablement we don't want).
-        # Upstream announced this option would stop working on 2026-01-01;
-        # nix-installer still honours --prefer-upstream-nix as of 2026-08-31,
-        # but the action always fetches the latest installer, so this is not
-        # pinned. If it ever flips, this is the one place to change.
-        determinate: false
-        # Don't post install telemetry to Determinate Systems.
-        diagnostic-endpoint: ''
+      # Upstream Nix, with the version pinned by the action.
+      uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
     - name: Use ${{ inputs.cachix-name }} Cachix cache
       uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
       with:
