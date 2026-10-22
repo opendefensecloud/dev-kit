@@ -67,11 +67,8 @@ jobs:
           sparse-checkout-cone-mode: false
           persist-credentials: false
       - name: Install nix
-        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
-        with:
-          # Upstream Nix and no telemetry, as in setup-nix.
-          determinate: false
-          diagnostic-endpoint: ''
+        # Upstream Nix, as in setup-nix.
+        uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
       - name: Relock
         id: relock
         working-directory: repo
