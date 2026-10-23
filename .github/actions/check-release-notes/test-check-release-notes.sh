@@ -44,6 +44,10 @@ weird_merge=$(merge_commit weird "whatever" "Weird title (#3)")
 deps_merge=$(merge_commit deps "deps: bump" "deps: bump (#4)")
 breaking_merge=$(merge_commit breaking "feat!: breaking" "feat!: breaking merge (#5)")
 
+# Conventional subject with emoji and extra whitespace, absent from the
+# context: normalization must trim it so the type filter still skips it.
+merge_commit spaced "feat: spaced" "  ✨  feat:   spaced   feature  " > /dev/null
+
 git commit -q --allow-empty -m "fix: direct commit"
 fix_direct=$(git rev-parse HEAD)
 git commit -q --allow-empty -m "feat!: direct breaking commit"
@@ -102,6 +106,40 @@ set -e
 [ "$rc" -eq 0 ] || fail "expected exit 0, got $rc"
 [ -z "$actual" ] || fail "expected no output, got:
 $actual"
+echo "PASS"
+
+# Root commit: an empty %P field must not shift the subject into parents.
+new_repo "$TESTDIR/root"
+jq -n '[{commits: []}]' > ctx.json
+
+echo "=== Test 4: root commit keeps its subject ==="
+set +e
+actual=$(CLIFF_CONTEXT=ctx.json bash "$ROOT/check-release-notes.sh" HEAD 2> /dev/null)
+rc=$?
+set -e
+[ "$rc" -eq 1 ] || fail "expected exit 1, got $rc"
+expected="$(git rev-parse --short HEAD) chore: init"
+[ "$actual" = "$expected" ] || fail "unexpected output:
+$actual"
+echo "PASS"
+
+# The shared config is the contract for the guard's subject normalisation and
+# type list. Assert that the two have not drifted apart.
+echo "=== Test 5: guard constants match the shared cliff.toml ==="
+config="$ROOT/../../../cliff.toml"
+[ -f "$config" ] || fail "shared cliff.toml not found at $config"
+
+guard_emoji=$(awk -F"'" '/^EMOJI_RANGES=/{print $2}' "$ROOT/check-release-notes.sh")
+guard_types=$(awk -F"'" '/^CONVENTIONAL_TYPES=/{print $2}' "$ROOT/check-release-notes.sh")
+[ -n "$guard_emoji" ] || fail "could not read EMOJI_RANGES from check-release-notes.sh"
+[ -n "$guard_types" ] || fail "could not read CONVENTIONAL_TYPES from check-release-notes.sh"
+
+config_emoji=$(awk -F'[][]' '/1F000/{print $2}' "$config")
+[ "$config_emoji" = "$guard_emoji" ] || fail "EMOJI_RANGES drifted from the shared cliff.toml"
+
+config_types=$(grep -oE "message = '\^[a-z]+" "$config" | sed "s/message = '\^//" | sort -u | paste -sd'|')
+expected_types=$(printf '%s' "$guard_types" | tr '|' '\n' | sort -u | paste -sd'|')
+[ "$config_types" = "$expected_types" ] || fail "CONVENTIONAL_TYPES drifted from the shared cliff.toml (config: ${config_types})"
 echo "PASS"
 
 echo "✅ All tests passed"

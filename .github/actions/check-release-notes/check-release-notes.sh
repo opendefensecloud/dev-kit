@@ -13,11 +13,11 @@
 #
 # A commit reaches the notes only if both of these hold:
 #
-#   1. it is a merge commit, because cliff.toml filters on merge_commit
+#   1. it is a merge commit, because the shared cliff.toml filters on merge_commit
 #   2. its subject parses as a conventional commit, which is what picks a group
 #
-# The context check keeps a custom cliff config that groups extra types from
-# stopping the release: if git-cliff renders the merge, the notes contain it.
+# The context check keeps a config that groups extra types from stopping the
+# release: if git-cliff renders the merge, the notes contain it.
 #
 # Squash and rebase merges fail the first. GitHub's default
 # "Merge pull request #1 from ..." subject and the Revert button's default
@@ -29,17 +29,20 @@ RANGE="${1:?usage: $0 <git range>, e.g. v0.3.0..HEAD}"
 CLIFF_CONTEXT="${CLIFF_CONTEXT:-ctx.json}"
 FORCE="${FORCE:-false}"
 
-# The types cliff.toml assigns a group to. Anything else has no section to go
-# into and is dropped.
+# The conventional types the shared cliff.toml groups or deliberately skips.
+# Anything else has no section to go into and is dropped.
 CONVENTIONAL_TYPES='feat|fix|perf|refactor|revert|docs|ci|chore|test|style|build'
 
-# git-cliff strips these before parsing, so they have to go here too, otherwise
-# a subject like "✨ feat: thing" looks unparseable when git-cliff handles it
-# fine. Keep in sync with commit_preprocessors in cliff.toml.
+# git-cliff strips these before parsing and trims the subject, so they have to
+# go here too, otherwise a subject like "✨ feat: thing" looks unparseable when
+# git-cliff handles it fine. Keep in sync with commit_preprocessors in the
+# shared cliff.toml at the repository root. A caller that overrides
+# `cliff_config` gets a best-effort check; the rendered context above remains
+# authoritative for merges it actually renders.
 EMOJI_RANGES='\x{1F000}-\x{1FAFF}\x{2600}-\x{27BF}\x{2B00}-\x{2BFF}\x{FE0E}\x{FE0F}\x{200D}'
 
 normalise_subjects() {
-  perl -CSD -pe "s/[${EMOJI_RANGES}]//g; s/[ \\t]{2,}/ /g"
+  perl -CSD -pe "s/[${EMOJI_RANGES}]//g; s/[ \\t]{2,}/ /g; s/^[ \\t]+//; s/[ \\t]+$//"
 }
 
 # Commits git-cliff will render. The notes template keeps merge commits only,
@@ -48,8 +51,10 @@ normalise_subjects() {
 rendered_ids=$(jq -r '.[0].commits[] | select(.merge_commit == true) | .id' "$CLIFF_CONTEXT")
 
 missing=$(
-  git log --first-parent "$RANGE" --format='%H%x09%h%x09%P%x09%s' |
-    while IFS=$'\t' read -r sha short parents subject; do
+  # \x1f is not IFS whitespace, so an empty %P (root commit) stays a field
+  # instead of collapsing and shifting the subject into parents.
+  git log --first-parent "$RANGE" --format='%H%x1f%h%x1f%P%x1f%s' |
+    while IFS=$'\x1f' read -r sha short parents subject; do
       # Already represented in the notes.
       if grep -qxF "$sha" <<< "$rendered_ids"; then
         continue
