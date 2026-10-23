@@ -29,6 +29,41 @@ jobs:
             perf
             revert
           requireScope: false
+      - name: Breaking commits are marked in the PR title
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          breaking_regex='^[a-z]+(\([^)]*\))?!:'
+
+          # Ignore merge commits: a merge from the base branch must not force
+          # this PR's title to be breaking. Only the subject's "!" counts,
+          # because the release config strips commit bodies before parsing.
+          breaking=$(gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/commits" \
+            --jq '.[] | select((.parents | length) < 2)
+                  | (.commit.message | split("\n")[0]) as $subject
+                  | select($subject | test("^[a-z]+(\\([^)]*\\))?!:"))
+                  | (.sha | .[0:7]) as $sha
+                  | "\($sha) \($subject)"')
+
+          if [ -z "$breaking" ]; then
+            exit 0
+          fi
+
+          if [[ "$PR_TITLE" =~ $breaking_regex ]]; then
+            exit 0
+          fi
+
+          echo "::error::This PR contains breaking commit(s), but the PR title is not marked breaking."
+          printf '%s\n' "$breaking"
+          echo "Rename the PR title to a breaking conventional title, e.g. 'feat!:' or 'fix!:'."
+          echo "Editing the title reruns this check."
+          exit 1
 
   commitlint:
     name: Commit Messages
