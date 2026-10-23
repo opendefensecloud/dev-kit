@@ -2,5 +2,17 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "github>opendefensecloud/renovate-config"
+  ],
+  "customManagers": [
+    {
+      "description": "Runner labels passed as reusable-workflow inputs, which the github-actions manager only reads from a job's runs-on",
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/osv-scanner\\.yml$/"],
+      "matchStrings": [
+        "runs-on: (?<depName>ubuntu)-(?<currentValue>\\d+\\.\\d+(-arm)?)\\s"
+      ],
+      "datasourceTemplate": "github-runners",
+      "depTypeTemplate": "github-runner"
+    }
   ]
 }
