@@ -419,6 +419,12 @@ jobs:
     uses: opendefensecloud/dev-kit/.github/workflows/conventional-commits.yml@<40-char-sha> # <tag>
 ```
 
+On pull requests, it also fails when any non-merge commit is a conventional
+breaking change (`type!` or `type(scope)!`) but the PR title is not breaking.
+The title becomes the merge commit, so this keeps the release notes and version
+bump aligned. Merge commits are ignored, so a merge from the base branch cannot
+force the title to change.
+
 `.github/workflows/osv-scanner.yml`:
 
 ```yaml
