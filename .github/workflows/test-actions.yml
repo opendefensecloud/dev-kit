@@ -58,6 +58,8 @@ jobs:
         run: scripts/test-check-dev-kit-pins.sh
       - name: Test renovate-relock.sh
         run: scripts/test-renovate-relock.sh
+      - name: Test check-release-notes.sh
+        run: .github/actions/check-release-notes/test-check-release-notes.sh
 
 
   # yq is not on the runner image but is in this repository's dev shell, so

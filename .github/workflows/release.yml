@@ -1,0 +1,327 @@
+name: Release
+
+# Reusable workflow that computes version and notes with git-cliff,
+# creates a tag and a draft release. Publishing the draft triggers
+# repo-specific build jobs (Docker, Helm, docs, assets).
+#
+# The caller's stub carries the triggers (workflow_dispatch). See "Release
+# workflow" in the README.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Version to release, e.g. v0.4.0. Leave empty and it is computed from the commits.'
+        required: false
+        type: string
+        default: ''
+      dry_run:
+        description: 'Render the version and notes only. Do not tag or create a release.'
+        required: false
+        type: boolean
+        default: true
+      force:
+        description: 'Release even though commits are missing from the notes. Recovery only.'
+        required: false
+        type: boolean
+        default: false
+      retry_assets_for:
+        description: 'Recovery only. Tag of an existing DRAFT release whose asset upload failed. Skips version and notes.'
+        required: false
+        type: string
+        default: ''
+      cliff_config:
+        description: 'Path to git-cliff config file.'
+        required: false
+        type: string
+        default: 'cliff.toml'
+    outputs:
+      version:
+        description: 'The computed/released version.'
+        value: ${{ jobs.prepare.outputs.version }}
+      sha:
+        description: 'The commit SHA being released.'
+        value: ${{ jobs.prepare.outputs.sha }}
+      created:
+        description: 'Whether a tag and draft release were created.'
+        value: ${{ jobs.prepare.outputs.created }}
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: Compute version and notes
+    if: ${{ inputs.retry_assets_for == '' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # create the tag ref and the draft release
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      sha: ${{ steps.version.outputs.sha }}
+      created: ${{ steps.release.outputs.created }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Guard - releases are cut from the default branch
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+
+          case "$REF_TYPE" in
+            branch)
+              if [ "$REF_NAME" != "$DEFAULT_BRANCH" ]; then
+                echo "::error::Releases are cut from ${DEFAULT_BRANCH}, not ${REF_NAME}."
+                exit 1
+              fi
+              ;;
+            tag)
+              # A tag carries the release only if it points at code that landed
+              # on the default branch. fetch-depth: 0 puts the branch tip in
+              # refs/remotes/origin/<default>.
+              default_ref="refs/remotes/origin/${DEFAULT_BRANCH}"
+              if ! git rev-parse -q --verify "$default_ref" >/dev/null; then
+                echo "::error::Could not resolve ${default_ref}; a release needs full history."
+                exit 1
+              fi
+              if ! git merge-base --is-ancestor HEAD "$default_ref"; then
+                echo "::error::Tag ${REF_NAME} does not point at a commit on ${DEFAULT_BRANCH}."
+                exit 1
+              fi
+              ;;
+            *)
+              echo "::error::Releases must be cut from ${DEFAULT_BRANCH}; got ${REF_TYPE:-unknown} ${REF_NAME}."
+              exit 1
+              ;;
+          esac
+
+      - name: Install git-cliff
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: git-cliff@2.13.1
+
+      - name: Guard - no draft release already pending
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          draft_tags=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 30 \
+            --json tagName,isDraft --jq '.[] | select(.isDraft) | .tagName')
+
+          blocking_drafts=()
+          for tag in $draft_tags; do
+            if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+              blocking_drafts+=("$tag")
+            fi
+          done
+
+          if [ ${#blocking_drafts[@]} -gt 0 ]; then
+            echo "::error::A draft release is already pending: ${blocking_drafts[*]}. Publish it to ship, or delete the draft and its tag to cut a fresh one that includes what landed since."
+            exit 1
+          fi
+
+      - name: Read release context
+        id: ctx
+        env:
+          CLIFF_CONFIG: ${{ inputs.cliff_config }}
+        run: |
+          set -euo pipefail
+
+          if [ ! -f "$CLIFF_CONFIG" ]; then
+            echo "::error::${CLIFF_CONFIG} not found."
+            exit 1
+          fi
+
+          git cliff --config "$CLIFF_CONFIG" --use-branch-tags --unreleased --bump --context > ctx.json
+
+          previous_tag=$(jq -r '.[0].previous.version // empty' ctx.json)
+          computed_version=$(jq -r '.[0].version // empty' ctx.json)
+
+          if [ -z "$previous_tag" ]; then
+            echo "::error::Could not work out the previous release tag from git-cliff."
+            exit 1
+          fi
+
+          echo "Releasing everything since ${previous_tag}."
+          {
+            echo "previous=${previous_tag}"
+            echo "computed=${computed_version}"
+          } >> "$GITHUB_OUTPUT"
+
+      # Check out the tooling from the same commit as the reusable workflow, so
+      # consumers do not need their own copy. job.workflow_* is github.com only.
+      - name: Check out release tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .release-tooling
+          persist-credentials: false
+
+      - name: Guard - nothing is missing from the notes
+        uses: ./.release-tooling/.github/actions/check-release-notes
+        with:
+          range: ${{ steps.ctx.outputs.previous }}..HEAD
+          force: ${{ inputs.force }}
+
+      - name: Guard - something releasable landed
+        if: ${{ inputs.version == '' }}
+        env:
+          PREVIOUS_TAG: ${{ steps.ctx.outputs.previous }}
+        run: |
+          set -euo pipefail
+
+          releasable_count=$(jq '
+            [ .[0].commits[] | select((.raw_message | test("^(feat|fix|perf)")) or .breaking) ] | length
+          ' ctx.json)
+
+          if [ "$releasable_count" -eq 0 ]; then
+            echo "::error::No feat/fix/perf or breaking commits since ${PREVIOUS_TAG}. Pass an explicit version to override."
+            exit 1
+          fi
+
+      - name: Compute version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          COMPUTED_VERSION: ${{ steps.ctx.outputs.computed }}
+        run: |
+          set -euo pipefail
+
+          version="${INPUT_VERSION:-$COMPUTED_VERSION}"
+          release_sha=$(git rev-parse HEAD)
+
+          if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-.+)?$ ]]; then
+            echo "::error::Version must look like v1.2.3 or v1.2.3-rc1, got '${version}'."
+            exit 1
+          fi
+
+          if git rev-parse -q --verify "refs/tags/${version}" >/dev/null; then
+            echo "::error::Tag ${version} already exists."
+            exit 1
+          fi
+
+          echo "Releasing ${version} from ${release_sha}."
+          {
+            echo "version=${version}"
+            echo "sha=${release_sha}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Render release notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SHA: ${{ steps.version.outputs.sha }}
+          CLIFF_CONFIG: ${{ inputs.cliff_config }}
+        run: |
+          set -euo pipefail
+
+          git cliff --config "$CLIFF_CONFIG" --use-branch-tags --unreleased --tag "$VERSION" --output notes.md
+
+          if [ -z "$(tr -d '[:space:]' < notes.md)" ]; then
+            echo "::error::Rendered notes are empty."
+            exit 1
+          fi
+
+          {
+            echo "## $VERSION"
+            echo
+            echo "<sub>commit \`${SHA}\`</sub>"
+            echo
+            cat notes.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create tag and draft release
+        id: release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          SHA: ${{ steps.version.outputs.sha }}
+        run: |
+          set -euo pipefail
+
+          create_tag() {
+            gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f "ref=refs/tags/${VERSION}" \
+              -f "sha=${SHA}" >/dev/null
+          }
+
+          delete_tag() {
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${VERSION}" || true
+          }
+
+          create_draft_release() {
+            local prerelease_flag=()
+            if [[ "$VERSION" == *-* ]]; then
+              prerelease_flag=(--prerelease)
+            fi
+            gh release create "$VERSION" \
+              --repo "$GITHUB_REPOSITORY" \
+              --draft \
+              --title "$VERSION" \
+              --notes-file notes.md \
+              --target "$SHA" \
+              "${prerelease_flag[@]}"
+          }
+
+          create_tag
+
+          if ! create_draft_release; then
+            echo "::error::Creating the release failed, rolling the tag back."
+            delete_tag
+            exit 1
+          fi
+
+          echo "created=true" >> "$GITHUB_OUTPUT"
+
+      - name: Dry run notice
+        if: ${{ inputs.dry_run }}
+        run: |
+          echo "Dry run: nothing tagged or created. Re-run with dry_run unchecked to release." >> "$GITHUB_STEP_SUMMARY"
+
+  validate-retry:
+    name: Validate asset retry
+    # The recovery path skips prepare, so nothing else would check the target.
+    # Asset jobs live in the calling repository; gate them on this job's caller
+    # succeeding (needs.<call>.result == 'success'), not on retry being set.
+    if: ${{ inputs.retry_assets_for != '' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Guard - retry is not a dry run
+        if: ${{ inputs.dry_run }}
+        run: |
+          echo "::error::retry_assets_for rebuilds and re-uploads assets; there is no dry run for it. Uncheck dry_run to retry."
+          exit 1
+
+      - name: Check the draft release exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.retry_assets_for }}
+        run: |
+          set -euo pipefail
+
+          release_state=$(gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" \
+            --json isDraft --jq 'if .isDraft then "draft" else "published" end' 2>/dev/null || echo "missing")
+
+          case "$release_state" in
+            draft)
+              ;;
+            published)
+              echo "::error::${VERSION} is already published and immutable. Cut a new version with the Release workflow."
+              exit 1
+              ;;
+            missing)
+              echo "::error::No release found for ${VERSION}. This workflow only retries a failed upload. Use the Release workflow to cut a release."
+              exit 1
+              ;;
+          esac
