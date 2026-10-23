@@ -1,0 +1,149 @@
+name: Audit Action Pins
+
+# Reusable, and also run on dev-kit's own PRs. Consumers call it from a stub;
+# see "Governance workflows" in the README.
+#
+# update-action-pins.yml makes sure every action is pinned to a SHA; this checks
+# whether that SHA can be trusted. It runs zizmor's online audits over every
+# workflow and composite action, and fails only on these findings:
+# - impostor-commit: the SHA isn't on any branch or tag of the upstream repo,
+#   e.g. a fork's commit served under the parent repo's URL.
+# - ref-version-mismatch: the version comment doesn't match the SHA.
+# zizmor can't run a subset of its audits, so the job filters its JSON output.
+#
+# On pull requests only findings on lines the PR adds or changes count. A pinned
+# SHA's code never changes, so a finding on a pin the PR doesn't touch comes
+# from upstream moving a tag, and would otherwise block every PR. Any other
+# event, such as a manual `workflow_dispatch` run, audits every pin.
+#
+# No `paths` filter on purpose: a required check gated by paths never reports on
+# PRs outside them, so the merge stays blocked.
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+# `bash` runs with pipefail, unlike the default `bash -e`: a failing git diff or
+# jq at the head of a pipeline must fail the step, not leave an empty result
+# that reads as "nothing to audit" or "no findings".
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  audit-pins:
+    name: Audit action pins
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: repo
+          # The PR's merge commit and its first parent, the base branch, to
+          # list the lines the PR changes.
+          fetch-depth: 2
+          persist-credentials: false
+      - name: List the lines the PR changes
+        id: changes
+        if: github.event_name == 'pull_request'
+        working-directory: repo
+        run: |
+          # <path>:<line> for each line the PR adds or changes, from the hunk
+          # headers of the merge commit's diff against the base branch. The
+          # prefixes are explicit so a diff.noprefix or diff.mnemonicPrefix
+          # setting can't change the paths, and core.quotePath is off so
+          # non-ASCII paths aren't quoted and escaped. git ends the `+++` line
+          # with a tab when the path holds a space; the tab isn't part of it.
+          git -c core.quotePath=false diff --unified=0 --no-color --no-ext-diff \
+            --src-prefix=a/ --dst-prefix=b/ HEAD^1 HEAD \
+            | awk '
+              /^diff --git / { header = 1; next }
+              header && /^\+\+\+ / { path = substr($0, 7); sub(/\t$/, "", path); next }
+              /^@@ / {
+                header = 0
+                split(substr($3, 2), range, ",")
+                count = (2 in range) ? range[2] : 1
+                for (i = 0; i < count; i++) print path ":" (range[1] + i)
+              }' > "$RUNNER_TEMP/changed-lines"
+          # Findings only count on changed lines, so without a changed line in a
+          # workflow or an action there's nothing to audit. The remaining steps
+          # are skipped rather than the workflow being filtered by `paths`, so
+          # the check still reports.
+          if grep -qE '^(\.github/workflows/[^/]+|(.*/)?action)\.ya?ml:[0-9]+$' "$RUNNER_TEMP/changed-lines"; then
+            echo "audit=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "audit=false" >> "$GITHUB_OUTPUT"
+            echo "No changed lines in a workflow or an action."
+          fi
+      # dev-kit's flake at the commit this workflow runs from, so zizmor comes
+      # from the same locked nixpkgs as the dev shell.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.changes.outputs.audit != 'false'
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: dev-kit
+          sparse-checkout: |
+            flake.nix
+            flake.lock
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      # Inlined rather than taken from setup-nix, as in flake-closure-diff: a
+      # reusable workflow cannot use the `./` path, which resolves against the
+      # caller. No Cachix: zizmor comes from cache.nixos.org.
+      - name: Install nix
+        if: steps.changes.outputs.audit != 'false'
+        # Upstream Nix, as in setup-nix.
+        uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+      - name: Run zizmor
+        if: steps.changes.outputs.audit != 'false'
+        working-directory: repo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Without a token zizmor falls back to offline mode: it skips the
+          # online audits, impostor-commit and ref-version-mismatch included,
+          # and the check would pass without auditing anything.
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::error::No GitHub token, so zizmor's online audits would not run."
+            exit 1
+          fi
+          # --no-config: a repo's zizmor.yml must not turn these audits off.
+          # --no-ignores: an inline `# zizmor: ignore[...]` doesn't hide a
+          # finding either. Neither finding is ever fine to merge unseen.
+          # --no-exit-codes: fail only when zizmor itself fails, not on findings.
+          nix shell --inputs-from path:../dev-kit nixpkgs#zizmor --command \
+            zizmor --format json-v1 --no-exit-codes --no-config --no-ignores \
+            --no-progress . > "$RUNNER_TEMP/zizmor.json"
+      - name: Fail on untrusted pins
+        if: steps.changes.outputs.audit != 'false'
+        run: |
+          # An empty or truncated report would read as "no findings".
+          if ! jq -e 'type == "array"' "$RUNNER_TEMP/zizmor.json" > /dev/null 2>&1; then
+            echo "::error::zizmor's report is missing or not a JSON array."
+            exit 1
+          fi
+          # On a pull request, only findings on the lines the PR changes count.
+          # zizmor's primary location for both audits is the `uses:` line.
+          scoped=false changed=/dev/null
+          if [[ -f "$RUNNER_TEMP/changed-lines" ]]; then
+            scoped=true changed="$RUNNER_TEMP/changed-lines"
+          fi
+          errors=$(jq -r --argjson scoped "$scoped" --rawfile changed "$changed" '
+            ($changed | split("\n") | map({(.): true}) | add // {}) as $scope
+            | .[]
+            | select(.ident == "impostor-commit" or .ident == "ref-version-mismatch")
+            | ((.locations | map(select(.symbolic.kind == "Primary")) | first) // .locations[0]) as $l
+            | ($l.symbolic.key.Local.verbatim_path | ltrimstr("./")) as $path
+            | ($l.concrete.location.start_point.row + 1) as $line
+            | select(($scoped | not) or $scope["\($path):\($line)"])
+            | "::error file=\($path),line=\($line)::\(.ident): \(.desc)\(if $l.symbolic.annotation then " (\($l.symbolic.annotation))" else "" end)"' \
+            "$RUNNER_TEMP/zizmor.json" | sort -u)
+          if [[ -n "$errors" ]]; then
+            echo "$errors"
+            exit 1
+          fi
+          echo "No impostor commits or mismatched version comments."

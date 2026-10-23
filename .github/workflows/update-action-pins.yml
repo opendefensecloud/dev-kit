@@ -13,13 +13,23 @@ on:
   pull_request:
   workflow_call:
 
+# `bash` runs with pipefail, unlike the default `bash -e`: a failing git grep at
+# the head of a pipeline must fail the step, not leave an empty result that
+# reads as "nothing found".
+defaults:
+  run:
+    shell: bash
+
 jobs:
   check-pins:
     name: Check action pins
     runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The PR's merge commit and its first parent, the base branch, for
+          # the moved-tag check.
+          fetch-depth: 2
           persist-credentials: false
       - name: Verify all actions are pinned to a SHA
         run: |
@@ -39,5 +49,66 @@ jobs:
             echo "$unpinned"
             echo ""
             echo "Run 'GITHUB_TOKEN=\$(gh auth token) update-action-pins .github/' to fix."
+            exit 1
+          fi
+      - name: Verify every pin carries only its version comment
+        run: |
+          # zizmor's ref-version-mismatch audit compares the comment with the
+          # SHA only when the comment is `# <version>` and nothing else: without
+          # a comment, or with any text after the version, it skips the pin
+          # without a finding. That includes `# zizmor: ignore[...]`, so no
+          # ignore comment can sit next to a pin. Both patterns are anchored to
+          # the `uses:` value, so an `@<sha> # <version>` later in the comment
+          # doesn't count.
+          pin='^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*[^@[:space:]]+@[0-9a-f]{40}'
+          malformed=$(grep -rhE '^[[:space:]]*(-[[:space:]]+)?uses:' .github/ \
+            | tr -d "\"'" \
+            | grep -E "$pin([[:space:]]|\$)" \
+            | grep -vE "$pin[[:space:]]+#[[:space:]]+[[:alnum:]._+/-]+[[:space:]]*\$" || true)
+          if [[ -n "$malformed" ]]; then
+            echo "::error::Found pinned actions whose comment is not just their version:"
+            echo "$malformed"
+            echo ""
+            echo "Write the pin as 'uses: <action>@<sha> # <version>', with nothing after the version."
+            exit 1
+          fi
+      - name: Verify no pin moved to a new commit under the same version
+        if: github.event_name == 'pull_request'
+        run: |
+          # A pin whose SHA changes while its version comment stays the same
+          # points at new code under a version that was already reviewed. Either
+          # upstream moved the release tag, which is how a compromised tag
+          # reaches a digest update, or the PR swapped the SHA and kept the
+          # comment. zizmor can't tell: the moved tag still matches the comment.
+          #
+          # This compares the merge commit (HEAD) with the base branch (HEAD^1).
+          # Without HEAD^1 the check can't compare; say why instead of failing
+          # on git grep's error.
+          if ! git rev-parse -q --verify 'HEAD^1^{commit}' > /dev/null; then
+            echo "::error::Base commit HEAD^1 not found; the check needs the PR's merge commit and its parents."
+            exit 1
+          fi
+          # GitHub resolves owner and repo case-insensitively, so lowercase the
+          # line: `Actions/Checkout` would otherwise not match `actions/checkout`.
+          # git grep exits 1 when nothing matches, which isn't an error.
+          pins() {
+            { git grep -hE '^[[:space:]]*(-[[:space:]]+)?uses:' "$1" -- .github/ || (($? == 1)); } \
+              | tr -d "\"'" \
+              | tr '[:upper:]' '[:lower:]' \
+              | sed -nE 's/^.*uses:[[:space:]]*([^@[:space:]]+)@([0-9a-f]{40})[[:space:]]+#[[:space:]]*([^[:space:]]+).*$/\1#\3 \2/p' \
+              | sort -u
+          }
+          # Only pins the PR adds count, so a version the base branch already
+          # pins to several SHAs doesn't fail every PR, nor the one fixing it.
+          base=$(pins HEAD^1)
+          moved=$(join <(printf '%s\n' "$base") <(comm -13 <(printf '%s\n' "$base") <(pins HEAD)) \
+            | awk '{ sub("#", " # ", $1); print $1 ": " $2 " -> " $3 }')
+          if [[ -n "$moved" ]]; then
+            echo "::error::Found action pins whose SHA changed but whose version comment did not:"
+            echo "$moved"
+            echo ""
+            echo "A new SHA needs a new version: 'git ls-remote --tags https://github.com/<owner>/<repo> | grep <sha>'"
+            echo "lists the tags pointing at it. If upstream moved the tag on purpose, review the"
+            echo "new commit; where this check is required, merging past it needs an admin."
             exit 1
           fi

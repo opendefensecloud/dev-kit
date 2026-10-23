@@ -35,7 +35,7 @@ jobs:
   shellcheck:
     runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Run ShellCheck on action and dev-kit scripts
         run: shellcheck .github/actions/*/*.sh scripts/*.sh
 
@@ -43,13 +43,15 @@ jobs:
     needs: shellcheck
     runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Test verify-clean.sh
         run: .github/actions/diff-check/test-verify-clean.sh
       - name: Test extract-go-version.sh
         run: .github/actions/get-go-version/test-extract-go-version.sh
       - name: Test the update-action-pins check
         run: scripts/test-update-action-pins.sh
+      - name: Test the audit-action-pins steps
+        run: scripts/test-audit-action-pins.sh
       - name: Test check-go-version.sh
         run: scripts/test-check-go-version.sh
       - name: Test check-dev-kit-pins.sh
@@ -64,7 +66,7 @@ jobs:
     needs: shellcheck
     runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up nix with the shared Cachix cache
         uses: ./.github/actions/setup-nix
         with:
@@ -80,7 +82,7 @@ jobs:
     needs: shellcheck
     runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up nix with the shared Cachix cache
         uses: ./.github/actions/setup-nix
         with:
