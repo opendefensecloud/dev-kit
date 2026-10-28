@@ -611,7 +611,7 @@ Modify `flake.nix` to adjust Go version, packages, and pre-commit hooks:
 
 ### Release workflow
 
-The shared release workflow lives in `opendefensecloud/dev-kit/.github/workflows/release.yml` and computes version and notes with git-cliff, creates a tag and a draft release. Publishing the draft triggers repo-specific build jobs (Docker, Helm, docs, assets). Notes are rendered from merge commits and grouped by conventional type using the shared `cliff.toml` in dev-kit, so consumers do not keep their own copy.
+The shared release workflow lives in `opendefensecloud/dev-kit/.github/workflows/release.yml` and computes version and notes with git-cliff, creates a draft release and its tag. Publishing the draft triggers repo-specific build jobs (Docker, Helm, docs, assets). Notes are rendered from merge commits and grouped by conventional type using the shared `cliff.toml` in dev-kit, so consumers do not keep their own copy.
 
 #### Using the reusable workflow
 
@@ -694,6 +694,8 @@ jobs:
 - **Default branch only**: Releases must be cut from the repository's default branch. A branch trigger must name the default branch; a tag trigger is accepted only when the tag points at a commit on it. Other triggers are rejected.
 - **Merge commits**: The shared config renders the merge commits on the default branch. A commit pushed directly to the branch is reported by the notes guard and fails the release unless `force` is set. Squash and rebase merges are treated the same way.
 - **Prior release tag**: The repository must already have a release tag. git-cliff derives the changelog boundary from the previous tag, and the workflow fails if there is none. Passing an explicit `version` does not bypass this.
+- **Tag creation**: The draft release is created first, then its tag. GitHub creates a draft's tag only when the release is published, so the workflow creates it explicitly; if that fails, it deletes the draft. A failed release therefore leaves no tag behind, and the workflow never deletes a tag.
+- **Tag immutability**: Where a `protect-release-tags` ruleset is active, a `v*` tag cannot be moved or deleted. Publish a pending draft to ship it; abandoning a draft whose tag exists burns that version, so cut the next patch.
 - **Publishing the draft**: After assets are attached to the draft release, publish it to trigger downstream workflows (Docker, Helm, docs). Prerelease versions (containing `-`) are marked as prereleases automatically.
 - **Asset retry**: `retry_assets_for` skips version and notes and must name an existing **draft** release. The workflow rejects a published or missing release, and rejects the combination with `dry_run`. Asset jobs must gate on `needs.<call>.result == 'success'` (see the stub above), otherwise `always()` would run them after a failed validation.
 

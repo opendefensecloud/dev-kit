@@ -1,7 +1,7 @@
 name: Release
 
 # Reusable workflow that computes version and notes with git-cliff,
-# creates a tag and a draft release. Publishing the draft triggers
+# creates a draft release and its tag. Publishing the draft triggers
 # repo-specific build jobs (Docker, Helm, docs, assets).
 #
 # The caller's stub carries the triggers (workflow_dispatch). See "Release
@@ -124,7 +124,7 @@ jobs:
           done
 
           if [ ${#blocking_drafts[@]} -gt 0 ]; then
-            echo "::error::A draft release is already pending: ${blocking_drafts[*]}. Publish it to ship, or delete the draft and its tag to cut a fresh one that includes what landed since."
+            echo "::error::A draft release is already pending: ${blocking_drafts[*]}. Publish it to ship, or delete the draft to abandon it. Release tags cannot be deleted where protect-release-tags is active, so if its tag exists that version is burned: cut the next patch."
             exit 1
           fi
 
@@ -239,7 +239,7 @@ jobs:
             cat notes.md
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Create tag and draft release
+      - name: Create draft release and tag
         id: release
         if: ${{ !inputs.dry_run }}
         env:
@@ -248,16 +248,6 @@ jobs:
           SHA: ${{ steps.version.outputs.sha }}
         run: |
           set -euo pipefail
-
-          create_tag() {
-            gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
-              -f "ref=refs/tags/${VERSION}" \
-              -f "sha=${SHA}" >/dev/null
-          }
-
-          delete_tag() {
-            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${VERSION}" || true
-          }
 
           create_draft_release() {
             local prerelease_flag=()
@@ -273,11 +263,26 @@ jobs:
               "${prerelease_flag[@]}"
           }
 
-          create_tag
+          create_tag() {
+            gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f "ref=refs/tags/${VERSION}" \
+              -f "sha=${SHA}" > /dev/null
+          }
 
+          # A draft release does not create its tag; GitHub materialises it on
+          # publish. Create the draft first, then the tag, so a failure never
+          # leaves a tag without a release and this workflow never has to delete
+          # a tag.
           if ! create_draft_release; then
-            echo "::error::Creating the release failed, rolling the tag back."
-            delete_tag
+            echo "::error::Creating the draft release failed. No tag was created; if a draft for ${VERSION} exists, delete it before retrying."
+            exit 1
+          fi
+
+          if ! create_tag; then
+            echo "::error::Creating tag ${VERSION} failed; deleting the draft release. This workflow never deletes tags."
+            if ! gh release delete "$VERSION" --repo "$GITHUB_REPOSITORY" --yes; then
+              echo "::error::Could not delete draft release ${VERSION}. Delete it manually before retrying; if ${VERSION} is already tagged, cut the next patch instead."
+            fi
             exit 1
           fi
 
