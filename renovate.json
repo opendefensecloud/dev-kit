@@ -3,10 +3,11 @@
   "extends": [
     "github>opendefensecloud/renovate-config"
   ],
-  "regexManagers": [
+  "customManagers": [
     {
-      "fileMatch": [
-        "^\\.github/workflows/.*\\.ya?ml$"
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/.*\\.ya?ml$/"
       ],
       "matchStrings": [
         "git-cliff@(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)"
