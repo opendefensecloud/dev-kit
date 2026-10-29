@@ -158,9 +158,9 @@ else
   echo "    Created new ruleset"
 fi
 
-echo "  Configuring merge commit settings"
-${GH} api --method PATCH "repos/$REPO" \
+echo "  Configuring merge commit settings..."
+"$GH" api "repos/$REPO" -X PATCH \
   -f merge_commit_title=PR_TITLE \
-  -f merge_commit_message=PR_BODY
+  -f merge_commit_message=PR_BODY > /dev/null
 
 echo "Done."

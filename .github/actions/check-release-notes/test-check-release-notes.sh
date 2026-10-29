@@ -45,7 +45,7 @@ deps_merge=$(merge_commit deps "deps: bump" "deps: bump (#4)")
 breaking_merge=$(merge_commit breaking "feat!: breaking" "feat!: breaking merge (#5)")
 
 # Conventional subject with emoji and extra whitespace, absent from the
-# context: normalization must trim it so the type filter still skips it.
+# context: normalisation must trim it so the type filter still skips it.
 merge_commit spaced "feat: spaced" "  ✨  feat:   spaced   feature  " > /dev/null
 
 git commit -q --allow-empty -m "fix: direct commit"

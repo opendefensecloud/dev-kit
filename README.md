@@ -421,7 +421,8 @@ jobs:
 
 On pull requests, it also fails when any non-merge commit is a conventional
 breaking change (`type!` or `type(scope)!`) but the PR title is not breaking.
-The title becomes the merge commit, so this keeps the release notes and version
+The title becomes the merge commit subject (`repo-settings.sh` sets
+`merge_commit_title=PR_TITLE`), so this keeps the release notes and version
 bump aligned. Merge commits are ignored, so a merge from the base branch cannot
 force the title to change.
 
@@ -611,7 +612,7 @@ Modify `flake.nix` to adjust Go version, packages, and pre-commit hooks:
 
 ### Release workflow
 
-The shared release workflow lives in `opendefensecloud/dev-kit/.github/workflows/release.yml` and computes version and notes with git-cliff, creates a draft release and its tag. Publishing the draft triggers repo-specific build jobs (Docker, Helm, docs, assets). Notes are rendered from merge commits and grouped by conventional type using the shared `cliff.toml` in dev-kit, so consumers do not keep their own copy.
+The shared release workflow lives in `opendefensecloud/dev-kit/.github/workflows/release.yml`, computes version and notes with git-cliff, and creates a draft release and its tag. Publishing the draft triggers repo-specific build jobs (Docker, Helm, docs, assets). Notes are rendered from merge commits and grouped by conventional type using the shared `cliff.toml` in dev-kit, so consumers do not keep their own copy.
 
 #### Using the reusable workflow
 

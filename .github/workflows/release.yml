@@ -1,6 +1,6 @@
 name: Release
 
-# Reusable workflow that computes version and notes with git-cliff,
+# Reusable workflow that computes version and notes with git-cliff and
 # creates a draft release and its tag. Publishing the draft triggers
 # repo-specific build jobs (Docker, Helm, docs, assets).
 #
