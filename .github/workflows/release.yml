@@ -53,7 +53,7 @@ jobs:
   prepare:
     name: Compute version and notes
     if: ${{ inputs.retry_assets_for == '' }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: write # create the tag ref and the draft release
     outputs:
@@ -299,7 +299,7 @@ jobs:
     # Asset jobs live in the calling repository; gate them on this job's caller
     # succeeding (needs.<call>.result == 'success'), not on retry being set.
     if: ${{ inputs.retry_assets_for != '' }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       # Draft releases are not visible to a read-only token.
       contents: write
