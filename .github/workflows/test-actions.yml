@@ -3,15 +3,16 @@ name: Test Actions
 # Consuming repositories pin this repo by SHA, so anything shipped from here
 # reaches their CI unchanged. The triggers therefore cover what is shipped —
 # the composite actions and their pins, common.mk, the scripts, the flake, the
-# reusable workflows, and the README caller stubs consumers copy — not just the
-# shell scripts. A pin bump in an action.yml used to change what every consumer
-# runs without a single job executing here, and a permissions change in a
-# reusable workflow can break every caller at startup.
+# reusable workflows, the shared cliff.toml, and the README caller stubs
+# consumers copy — not just the shell scripts. A pin bump in an action.yml used
+# to change what every consumer runs without a single job executing here, and a
+# permissions change in a reusable workflow can break every caller at startup.
 on:
   pull_request:
     paths:
       - '.github/actions/**'
       - '.github/workflows/**'
+      - 'cliff.toml'
       - 'README.md'
       - 'common.mk'
       - 'flake.lock'
@@ -22,6 +23,7 @@ on:
     paths:
       - '.github/actions/**'
       - '.github/workflows/**'
+      - 'cliff.toml'
       - 'README.md'
       - 'common.mk'
       - 'flake.lock'
@@ -58,6 +60,8 @@ jobs:
         run: scripts/test-check-dev-kit-pins.sh
       - name: Test renovate-relock.sh
         run: scripts/test-renovate-relock.sh
+      - name: Test check-release-notes.sh
+        run: .github/actions/check-release-notes/test-check-release-notes.sh
 
 
   # yq is not on the runner image but is in this repository's dev shell, so
