@@ -8,7 +8,7 @@ on:
         required: false
         type: string
       dry_run:
-        description: 'Render the version and notes only. Do not tag or create a release.'
+        description: 'Render the version and notes only. Do not create or update a release, or create a tag.'
         required: false
         type: boolean
         default: true
@@ -17,6 +17,13 @@ on:
         required: false
         type: boolean
         default: false
+      create_tag:
+        description: 'Create the release tag now instead of when the draft is published. Leave unchecked to only update the draft.'
+        required: false
+        type: boolean
+        default: false
+  push:
+    branches: [main]
 
 permissions:
   contents: read
@@ -31,6 +38,10 @@ jobs:
     permissions:
       contents: write
     with:
-      version: ${{ inputs.version }}
-      dry_run: ${{ inputs.dry_run }}
-      force: ${{ inputs.force }}
+      # A push keeps the draft up to date; it never tags or publishes. The
+      # `inputs` context is empty on push, so each value is selected by the
+      # event and still has the declared type.
+      version: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '' }}
+      dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+      force: ${{ github.event_name == 'workflow_dispatch' && inputs.force }}
+      create_tag: ${{ github.event_name == 'workflow_dispatch' && inputs.create_tag }}

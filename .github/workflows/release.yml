@@ -1,11 +1,12 @@
 name: Release
 
 # Reusable workflow that computes version and notes with git-cliff and
-# creates a draft release and its tag. Publishing the draft triggers
-# repo-specific build jobs (Docker, Helm, docs, assets).
+# creates or updates a draft release. The tag is created during a run when
+# `create_tag` is enabled (the default), or by publishing the draft. Publishing
+# the draft triggers repo-specific build jobs (Docker, Helm, docs, assets).
 #
-# The caller's stub carries the triggers (workflow_dispatch). See "Release
-# workflow" in the README.
+# The caller's stub carries the triggers (workflow_dispatch, optionally push
+# to the default branch). See "Release workflow" in the README.
 
 on:
   workflow_call:
@@ -16,7 +17,7 @@ on:
         type: string
         default: ''
       dry_run:
-        description: 'Render the version and notes only. Do not tag or create a release.'
+        description: 'Render the version and notes only. Do not create or update a release, or create a tag.'
         required: false
         type: boolean
         default: true
@@ -35,6 +36,11 @@ on:
         required: false
         type: string
         default: '.release-tooling/cliff.toml'
+      create_tag:
+        description: 'Create the release tag now instead of when the draft is published.'
+        required: false
+        type: boolean
+        default: false
     outputs:
       version:
         description: 'The computed/released version.'
@@ -42,9 +48,12 @@ on:
       sha:
         description: 'The commit SHA being released.'
         value: ${{ jobs.prepare.outputs.sha }}
-      created:
-        description: 'Whether a tag and draft release were created.'
-        value: ${{ jobs.prepare.outputs.created }}
+      draft_updated:
+        description: 'Whether the draft release was created or updated.'
+        value: ${{ jobs.prepare.outputs.draft_updated }}
+      tag_created:
+        description: 'Whether this run created the release tag.'
+        value: ${{ jobs.prepare.outputs.tag_created }}
 
 permissions:
   contents: read
@@ -59,7 +68,8 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       sha: ${{ steps.version.outputs.sha }}
-      created: ${{ steps.release.outputs.created }}
+      draft_updated: ${{ steps.release.outputs.draft_updated }}
+      tag_created: ${{ steps.tag.outputs.tag_created }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -107,13 +117,16 @@ jobs:
         with:
           tool: git-cliff@2.13.1
 
-      - name: Guard - no draft release already pending
+      # A draft whose tag does not exist yet is the normal, update-in-place
+      # case. A draft whose tag does exist is a release already cut with
+      # create_tag, so a second run must not touch it.
+      - name: Guard - no tagged draft release already pending
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
-          draft_tags=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 30 \
+          draft_tags=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 \
             --json tagName,isDraft --jq '.[] | select(.isDraft) | .tagName')
 
           blocking_drafts=()
@@ -124,7 +137,7 @@ jobs:
           done
 
           if [ ${#blocking_drafts[@]} -gt 0 ]; then
-            echo "::error::A draft release is already pending: ${blocking_drafts[*]}. Publish it to ship, or delete the draft to abandon it. Release tags cannot be deleted where protect-release-tags is active, so if its tag exists that version is burned: cut the next patch."
+            echo "::error::A draft release with an existing tag is already pending: ${blocking_drafts[*]}. Publish it to ship, or delete the draft to abandon it. Release tags cannot be deleted where protect-release-tags is active, so if its tag exists that version is burned: cut the next patch."
             exit 1
           fi
 
@@ -174,9 +187,12 @@ jobs:
           force: ${{ inputs.force }}
 
       - name: Guard - something releasable landed
+        id: releasable
         if: ${{ inputs.version == '' }}
         env:
           PREVIOUS_TAG: ${{ steps.ctx.outputs.previous }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
         run: |
           set -euo pipefail
 
@@ -185,12 +201,23 @@ jobs:
           ' ctx.json)
 
           if [ "$releasable_count" -eq 0 ]; then
+            # A push to the default branch has nothing to maintain; only an
+            # explicitly requested release (manual dispatch or tag push) should
+            # fail for this.
+            if [ "$EVENT_NAME" = "push" ] && [ "$REF_TYPE" = "branch" ]; then
+              echo "::notice::No feat/fix/perf or breaking commits since ${PREVIOUS_TAG}; leaving the draft release untouched."
+              echo "releasable=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             echo "::error::No feat/fix/perf or breaking commits since ${PREVIOUS_TAG}. Pass an explicit version to override."
             exit 1
           fi
 
+          echo "releasable=true" >> "$GITHUB_OUTPUT"
+
       - name: Compute version
         id: version
+        if: ${{ steps.releasable.outputs.releasable != 'false' }}
         env:
           INPUT_VERSION: ${{ inputs.version }}
           COMPUTED_VERSION: ${{ steps.ctx.outputs.computed }}
@@ -217,6 +244,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Render release notes
+        if: ${{ steps.releasable.outputs.releasable != 'false' }}
         env:
           VERSION: ${{ steps.version.outputs.version }}
           SHA: ${{ steps.version.outputs.sha }}
@@ -239,9 +267,14 @@ jobs:
             cat notes.md
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Create draft release and tag
+      # A draft release does not create its tag; GitHub materialises it on
+      # publish. A push run reuses the pending draft: it updates the same
+      # version in place, or renames the draft when the computed version moves.
+      # Updating target_commitish keeps the commit that publish will tag at the
+      # latest commit the notes cover.
+      - name: Create or update draft release
         id: release
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && steps.releasable.outputs.releasable != 'false' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
@@ -249,19 +282,86 @@ jobs:
         run: |
           set -euo pipefail
 
-          create_draft_release() {
-            local prerelease_flag=()
-            if [[ "$VERSION" == *-* ]]; then
-              prerelease_flag=(--prerelease)
-            fi
+          prerelease=false
+          if [[ "$VERSION" == *-* ]]; then
+            prerelease=true
+          fi
+
+          release_state=$(gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" \
+            --json isDraft --jq 'if .isDraft then "draft" else "published" end' 2>/dev/null || echo "missing")
+
+          if [ "$release_state" = "published" ]; then
+            echo "::error::Release ${VERSION} is already published and cannot be updated."
+            exit 1
+          fi
+
+          draft_source=""
+          if [ "$release_state" = "draft" ]; then
+            draft_source="$VERSION"
+          else
+            # The computed version moves when a feature lands on top of fixes.
+            # Reuse the pending draft (and anything already attached to it) by
+            # renaming it, instead of leaving a stale draft behind.
+            candidates=()
+            draft_tags=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 \
+              --json tagName,isDraft --jq '.[] | select(.isDraft) | .tagName')
+            while IFS= read -r tag; do
+              [ -n "$tag" ] || continue
+              if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+                echo "::error::A draft release with an existing tag is already pending: ${tag}. Publish it or delete the draft before running this workflow."
+                exit 1
+              fi
+              candidates+=("$tag")
+            done <<< "$draft_tags"
+
+            case "${#candidates[@]}" in
+              0) ;;
+              1) draft_source="${candidates[0]}" ;;
+              *)
+                echo "::error::Multiple draft releases are pending: ${candidates[*]}. Delete all but one and re-run."
+                exit 1
+                ;;
+            esac
+          fi
+
+          if [ -z "$draft_source" ]; then
+            echo "Creating draft release ${VERSION} at ${SHA}."
             gh release create "$VERSION" \
               --repo "$GITHUB_REPOSITORY" \
               --draft \
               --title "$VERSION" \
               --notes-file notes.md \
               --target "$SHA" \
-              "${prerelease_flag[@]}"
-          }
+              --prerelease="$prerelease"
+          else
+            if [ "$draft_source" != "$VERSION" ]; then
+              echo "Renaming draft release ${draft_source} to ${VERSION}."
+            else
+              echo "Updating draft release ${VERSION} at ${SHA}."
+            fi
+            gh release edit "$draft_source" \
+              --repo "$GITHUB_REPOSITORY" \
+              --tag "$VERSION" \
+              --title "$VERSION" \
+              --notes-file notes.md \
+              --target "$SHA" \
+              --prerelease="$prerelease"
+          fi
+
+          echo "draft_updated=true" >> "$GITHUB_OUTPUT"
+
+      # The draft is written first, so a failed tag leaves an updateable draft
+      # and no tag behind. Publishing the draft creates the tag anyway; this
+      # step exists for callers that need the tag before publishing.
+      - name: Create tag
+        id: tag
+        if: ${{ !inputs.dry_run && inputs.create_tag && steps.releasable.outputs.releasable != 'false' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          SHA: ${{ steps.version.outputs.sha }}
+        run: |
+          set -euo pipefail
 
           create_tag() {
             gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
@@ -269,29 +369,17 @@ jobs:
               -f "sha=${SHA}" > /dev/null
           }
 
-          # A draft release does not create its tag; GitHub materialises it on
-          # publish. Create the draft first, then the tag, so a failure never
-          # leaves a tag without a release and this workflow never has to delete
-          # a tag.
-          if ! create_draft_release; then
-            echo "::error::Creating the draft release failed. No tag was created; if a draft for ${VERSION} exists, delete it before retrying."
-            exit 1
-          fi
-
           if ! create_tag; then
-            echo "::error::Creating tag ${VERSION} failed; deleting the draft release. This workflow never deletes tags."
-            if ! gh release delete "$VERSION" --repo "$GITHUB_REPOSITORY" --yes; then
-              echo "::error::Could not delete draft release ${VERSION}. Delete it manually before retrying; if ${VERSION} is already tagged, cut the next patch instead."
-            fi
+            echo "::error::Creating tag ${VERSION} failed. The draft release is intact. If the tag does not exist, re-run to retry; if it does, publish the draft or cut the next patch."
             exit 1
           fi
 
-          echo "created=true" >> "$GITHUB_OUTPUT"
+          echo "tag_created=true" >> "$GITHUB_OUTPUT"
 
       - name: Dry run notice
         if: ${{ inputs.dry_run }}
         run: |
-          echo "Dry run: nothing tagged or created. Re-run with dry_run unchecked to release." >> "$GITHUB_STEP_SUMMARY"
+          echo "Dry run: nothing tagged, created or updated. Re-run with dry_run unchecked to release." >> "$GITHUB_STEP_SUMMARY"
 
   validate-retry:
     name: Validate asset retry
