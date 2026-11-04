@@ -161,7 +161,7 @@ touch "$REPO/notes.md"
 
 fresh
 release v1.1.0 true "$OLD" app-linux app-linux.sigstore.json
-report pass "$(exec_step "$UPDATE" VERSION=v1.1.0 SHA="$NEW")" "draft moves to a new commit"
+report pass "$(exec_step "$UPDATE" ASSETS=false VERSION=v1.1.0 SHA="$NEW")" "draft moves to a new commit"
 report 2 "$(calls "release delete-asset v1.1.0")" "a moved draft drops the assets built for the old commit"
 report 1 "$(calls "release edit v1.1.0 .*--target $NEW")" "a moved draft is retargeted"
 report pass "$(grep -n 'delete-asset' "$STATE/calls" | tail -1 | cut -d: -f1 | {
@@ -169,25 +169,35 @@ report pass "$(grep -n 'delete-asset' "$STATE/calls" | tail -1 | cut -d: -f1 | {
   edit=$(grep -n 'release edit' "$STATE/calls" | cut -d: -f1)
   [ "$last_delete" -lt "$edit" ] && echo pass || echo fail
 })" "assets are deleted before the draft is retargeted"
+report 1 "$(calls "release edit v1.1.0 .*--title v1.1.0 ")" "a caller without assets gets the plain title"
+
+fresh
+release v1.1.0 true "$OLD"
+report pass "$(exec_step "$UPDATE" ASSETS=true VERSION=v1.1.0 SHA="$NEW")" "update for a caller with assets"
+report 1 "$(calls "release edit v1.1.0 .*--title v1.1.0 (assets pending) ")" "a caller with assets marks the draft pending"
+
+fresh
+report pass "$(exec_step "$UPDATE" ASSETS=true VERSION=v1.1.0 SHA="$NEW")" "new draft for a caller with assets"
+report 1 "$(calls "release create v1.1.0 .*--title v1.1.0 (assets pending) ")" "a new draft is created pending"
 
 fresh
 release v1.1.0 true "$NEW" app-linux
-report pass "$(exec_step "$UPDATE" VERSION=v1.1.0 SHA="$NEW")" "re-run at the same commit"
+report pass "$(exec_step "$UPDATE" ASSETS=false VERSION=v1.1.0 SHA="$NEW")" "re-run at the same commit"
 report 0 "$(calls "delete-asset")" "a re-run at the same commit keeps its assets"
 
 fresh
 release v1.1.0 true "$NEW" solar-v1.1.0.intoto.jsonl
-report pass "$(exec_step "$UPDATE" VERSION=v1.2.0 SHA="$NEW")" "draft renamed to a new version"
+report pass "$(exec_step "$UPDATE" ASSETS=false VERSION=v1.2.0 SHA="$NEW")" "draft renamed to a new version"
 report 1 "$(calls "release delete-asset v1.1.0 solar-v1.1.0.intoto.jsonl")" "a renamed draft drops assets named for the old version"
 
 fresh
 release v1.1.0 true "$OLD"
-report pass "$(exec_step "$UPDATE" VERSION=v1.1.0 SHA="$NEW")" "a moved draft without assets updates"
+report pass "$(exec_step "$UPDATE" ASSETS=false VERSION=v1.1.0 SHA="$NEW")" "a moved draft without assets updates"
 report 0 "$(calls "delete-asset")" "nothing to delete on a draft without assets"
 
 fresh
 release v1.1.0 false "$OLD" app-linux
-report fail "$(exec_step "$UPDATE" VERSION=v1.1.0 SHA="$NEW")" "a published release is never updated"
+report fail "$(exec_step "$UPDATE" ASSETS=false VERSION=v1.1.0 SHA="$NEW")" "a published release is never updated"
 report 0 "$(calls "delete-asset")" "a published release keeps its assets"
 rm -f "$REPO/notes.md"
 

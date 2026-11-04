@@ -41,6 +41,11 @@ on:
         required: false
         type: boolean
         default: false
+      assets:
+        description: 'The caller attaches assets with upload-release-assets. The draft is titled "<version> (assets pending)" until the upload completes.'
+        required: false
+        type: boolean
+        default: false
     outputs:
       version:
         description: 'The computed/released version, or the retried draft on the asset retry path.'
@@ -292,12 +297,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
           SHA: ${{ steps.version.outputs.sha }}
+          ASSETS: ${{ inputs.assets }}
         run: |
           set -euo pipefail
 
           prerelease=false
           if [[ "$VERSION" == *-* ]]; then
             prerelease=true
+          fi
+
+          # upload-release-assets drops the marker once the assets are attached.
+          title="$VERSION"
+          if [ "$ASSETS" = "true" ]; then
+            title="${VERSION} (assets pending)"
           fi
 
           release_state=$(gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" \
@@ -342,7 +354,7 @@ jobs:
             gh release create "$VERSION" \
               --repo "$GITHUB_REPOSITORY" \
               --draft \
-              --title "$VERSION" \
+              --title "$title" \
               --notes-file notes.md \
               --target "$SHA" \
               --prerelease="$prerelease"
@@ -368,7 +380,7 @@ jobs:
             gh release edit "$draft_source" \
               --repo "$GITHUB_REPOSITORY" \
               --tag "$VERSION" \
-              --title "$VERSION" \
+              --title "$title" \
               --notes-file notes.md \
               --target "$SHA" \
               --prerelease="$prerelease"

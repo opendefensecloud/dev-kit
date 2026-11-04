@@ -62,3 +62,8 @@ echo "Uploading ${#files[@]} assets to draft ${TAG} at ${SHA}."
 # --clobber makes a retry idempotent; it can only replace assets on a draft.
 gh release upload "$TAG" "${files[@]}" --repo "$GITHUB_REPOSITORY" --clobber
 check "during the upload"
+
+# The release workflow titles the draft "<tag> (assets pending)"; drop the
+# marker now that the draft is complete.
+gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" > /dev/null
+echo "Draft ${TAG} has all its assets and can be published."

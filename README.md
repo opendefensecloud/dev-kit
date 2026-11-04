@@ -648,12 +648,12 @@ See [`.github/workflows/release-self.yml`](.github/workflows/release-self.yml) f
 A push moves the untagged draft to its own commit, so never publish that draft directly: a merge landing during review changes what you publish, and published releases are immutable.
 
 1. Run the Release workflow manually with `create_tag` and without `dry_run`. This tags the draft at the reviewed commit and freezes it: push runs then leave it untouched.
-2. Wait until that run, including its asset job, has finished.
+2. Wait until the draft's title loses its "(assets pending)" suffix (callers with `assets: true`), or the run has finished.
 3. Review the draft and publish it.
 
 #### Attaching release assets
 
-If your caller builds assets, add a job that depends on the release job and gate it on both the call result and the draft output. Upload with `upload-release-assets`: it refuses a release that was published, or a draft that moved to another commit, while the assets were building. The `version` and `sha` outputs also cover the retry path. The example assumes the caller also exposes `retry_assets_for` for recovery:
+If your caller builds assets, add a job that depends on the release job and gate it on both the call result and the draft output. Pass `assets: true` to the release call and upload with `upload-release-assets`. The draft is then titled "vX (assets pending)" until the upload completes. The action refuses a release that was published, or a draft that moved to another commit, while the assets were building. The `version` and `sha` outputs also cover the retry path. The example assumes the caller also exposes `retry_assets_for` for recovery:
 
 ```yaml
   assets:

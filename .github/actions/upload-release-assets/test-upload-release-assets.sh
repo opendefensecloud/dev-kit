@@ -23,6 +23,7 @@ case "$1 $2" in
     [ ! -e "$STATE/missing" ] || exit 1
     echo "$(cat "$STATE/draft") $(cat "$STATE/target")"
     ;;
+  "release edit") ;;
   "release upload")
     if [ -e "$STATE/on-upload" ]; then bash "$STATE/on-upload"; fi
     ;;
@@ -75,9 +76,11 @@ bad() {
 
 run pass "uploads to a draft that targets the built commit" true "$SHA"
 has "$LAST_CALLS" 'release upload v1.2.3 bin/app-darwin bin/app-linux checksums.txt --repo org/repo --clobber'
+has "$LAST_CALLS" 'release edit v1.2.3 --repo org/repo --title v1.2.3'
 
 run fail "refuses a published release" false "$SHA"
 has "$LAST_OUT" 'was published before the upload'
+lacks "$LAST_CALLS" 'release edit'
 lacks "$LAST_CALLS" 'release upload'
 
 run fail "refuses a draft moved to another commit" true "$OTHER"
@@ -90,6 +93,7 @@ run fail "refuses a draft that targets a branch" true main
 # shellcheck disable=SC2016
 run fail "reports a release published during the upload" true "$SHA" "" 'echo false > "$STATE/draft"'
 has "$LAST_OUT" 'was published during the upload'
+lacks "$LAST_CALLS" 'release edit'
 
 run fail "fails when a pattern matches nothing" true "$SHA" "bin/app-*
 provenance/*.intoto.jsonl"
