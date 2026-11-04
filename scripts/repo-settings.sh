@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Reconcile a repository's GitHub settings: labels, merge strategy, secret
-# scanning and branch protection ruleset.
+# scanning, branch protection ruleset and release tag ruleset.
 #
 # All configuration is passed through environment variables. Defaults are the
 # single source of truth in common.mk and are always passed by the make target;
@@ -148,6 +148,26 @@ if [ -n "$existing" ]; then
   echo "    Updated existing ruleset (id: $existing)"
 else
   "$GH" api "repos/$REPO/rulesets" -X POST --input <(echo "$RULESET_JSON") > /dev/null
+  echo "    Created new ruleset"
+fi
+
+# Only the release workflow may create v* tags. Publishing a draft whose tag
+# does not exist yet creates the tag as the publishing user, so this rejects
+# publishing a draft that was not frozen with create_tag. No admin bypass:
+# that is exactly who publishes. GitHub Actions (integration 15368) creates
+# the tag in a create_tag run.
+TAG_RULESET_JSON='{ "name": "protect-release-tags", "target": "tag", "enforcement": "active",
+  "conditions": { "ref_name": { "include": ["refs/tags/v*"], "exclude": [] } },
+  "rules": [ { "type": "creation" }, { "type": "update" }, { "type": "deletion" } ],
+  "bypass_actors": [ { "actor_id": 15368, "actor_type": "Integration", "bypass_mode": "always" } ] }'
+
+echo "  Configuring release tag ruleset (v* created by GitHub Actions only)..."
+existing=$("$GH" api "repos/$REPO/rulesets" -q '.[] | select(.name=="protect-release-tags") | .id' 2> /dev/null || true)
+if [ -n "$existing" ]; then
+  "$GH" api "repos/$REPO/rulesets/$existing" -X PUT --input <(echo "$TAG_RULESET_JSON") > /dev/null
+  echo "    Updated existing ruleset (id: $existing)"
+else
+  "$GH" api "repos/$REPO/rulesets" -X POST --input <(echo "$TAG_RULESET_JSON") > /dev/null
   echo "    Created new ruleset"
 fi
 
