@@ -68,7 +68,7 @@ touch "$TESTDIR/work/bin/app-linux" "$TESTDIR/work/bin/app-darwin" \
 
 # has <text> <pattern> / lacks <text> <pattern>: assert on the last run.
 has() { grep -q -- "$2" <<< "$1" || bad "expected '$2' in: $1"; }
-lacks() { if grep -q -- "$2" <<< "$1"; then bad "unexpected '$2' in: $1"; fi; }
+lacks() { ! grep -q -- "$2" <<< "$1" || bad "unexpected '$2' in: $1"; }
 bad() {
   echo "FAIL $*"
   fail=1

@@ -42,7 +42,7 @@ check() {
   local state is_draft target
   if ! state=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
     --json isDraft,targetCommitish --jq '"\(.isDraft) \(.targetCommitish)"'); then
-    echo "::error::Release ${TAG} not found $1."
+    echo "::error::Failed to look up release ${TAG} $1. See the gh error above."
     exit 1
   fi
   read -r is_draft target <<< "$state"
