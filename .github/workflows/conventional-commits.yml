@@ -12,9 +12,9 @@ permissions:
 jobs:
   pr-title:
     name: PR Title
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
-      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6
+      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -29,15 +29,59 @@ jobs:
             perf
             revert
           requireScope: false
+      - name: Breaking commits are marked in the PR title
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          # the PR commits endpoint returns at most 250, even with --paginate
+          count=$(jq '.pull_request.commits' "$GITHUB_EVENT_PATH")
+          if [ "$count" -gt 250 ]; then
+            echo "::error::This PR has $count commits, which exceeds the limit of 250 commits. Please squash your commits."
+            exit 1
+          fi
+
+          breaking_regex='^[a-z]+(\([^)]*\))?!:'
+
+          # Ignore merge commits: a merge from the base branch must not force
+          # this PR's title to be breaking. Only the subject's "!" counts,
+          # because the release config strips commit bodies before parsing.
+          breaking=$(gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/commits" \
+            | jq -r --arg re "$breaking_regex" '
+                .[]
+                | select((.parents | length) < 2)
+                | (.commit.message | split("\n")[0]) as $subject
+                | select($subject | test($re))
+                | (.sha | .[0:7]) as $sha
+                | "\($sha) \($subject)"')
+
+          if [ -z "$breaking" ]; then
+            exit 0
+          fi
+
+          if [[ "$PR_TITLE" =~ $breaking_regex ]]; then
+            exit 0
+          fi
+
+          echo "::error::This PR contains breaking commit(s), but the PR title is not marked breaking."
+          printf '%s\n' "$breaking"
+          echo "Rename the PR title to a breaking conventional title, e.g. 'feat!:' or 'fix!:'."
+          echo "Editing the title reruns this check."
+          exit 1
 
   commitlint:
     name: Commit Messages
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: wagoid/commitlint-github-action@b948419dd99f3fd78a6548d48f94e3df7f6bf3ed # v6
+      - uses: wagoid/commitlint-github-action@b948419dd99f3fd78a6548d48f94e3df7f6bf3ed # v6.2.1
         with:
           configFile: .commitlintrc.yml

@@ -56,6 +56,7 @@
         unzip
         yamlfmt
         yq-go
+        zizmor
       ];
 
       defaultHooks = {

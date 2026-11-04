@@ -1,0 +1,24 @@
+name: Check release notes
+description: Fail when commits in a range would be missing from the git-cliff notes.
+inputs:
+  range:
+    description: Git range to check, for example v0.3.0..HEAD.
+    required: true
+  force:
+    description: Warn instead of failing when commits are missing.
+    required: false
+    default: 'false'
+  context:
+    description: Path to the git-cliff --context JSON.
+    required: false
+    default: ctx.json
+runs:
+  using: composite
+  steps:
+    - name: Check release notes
+      shell: bash
+      env:
+        RANGE: ${{ inputs.range }}
+        FORCE: ${{ inputs.force }}
+        CLIFF_CONTEXT: ${{ inputs.context }}
+      run: bash "$GITHUB_ACTION_PATH/check-release-notes.sh" "$RANGE"

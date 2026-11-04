@@ -1,0 +1,22 @@
+name: flake-closure-diff
+
+# dev-kit calling its own reusable workflow, the way a consumer calls it. The
+# reference is local, as in renovate-auto-approve-self: it always exercises the
+# version in the branch and needs no self-referencing SHA.
+#
+# The workflow itself is in the paths so a change to it is exercised before it
+# reaches consumers, not only on the next lock bump.
+on:
+  pull_request:
+    paths:
+      - flake.lock
+      - flake.nix
+      - .github/workflows/flake-closure-diff.yml
+      - .github/workflows/flake-closure-diff-self.yml
+
+permissions:
+  contents: read
+
+jobs:
+  closure-diff:
+    uses: ./.github/workflows/flake-closure-diff.yml

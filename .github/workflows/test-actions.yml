@@ -3,15 +3,16 @@ name: Test Actions
 # Consuming repositories pin this repo by SHA, so anything shipped from here
 # reaches their CI unchanged. The triggers therefore cover what is shipped —
 # the composite actions and their pins, common.mk, the scripts, the flake, the
-# reusable workflows, and the README caller stubs consumers copy — not just the
-# shell scripts. A pin bump in an action.yml used to change what every consumer
-# runs without a single job executing here, and a permissions change in a
-# reusable workflow can break every caller at startup.
+# reusable workflows, the shared cliff.toml, and the README caller stubs
+# consumers copy — not just the shell scripts. A pin bump in an action.yml used
+# to change what every consumer runs without a single job executing here, and a
+# permissions change in a reusable workflow can break every caller at startup.
 on:
   pull_request:
     paths:
       - '.github/actions/**'
       - '.github/workflows/**'
+      - 'cliff.toml'
       - 'README.md'
       - 'common.mk'
       - 'flake.lock'
@@ -22,6 +23,7 @@ on:
     paths:
       - '.github/actions/**'
       - '.github/workflows/**'
+      - 'cliff.toml'
       - 'README.md'
       - 'common.mk'
       - 'flake.lock'
@@ -33,38 +35,42 @@ permissions:
 
 jobs:
   shellcheck:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Run ShellCheck on action and dev-kit scripts
         run: shellcheck .github/actions/*/*.sh scripts/*.sh
 
   test-scripts:
     needs: shellcheck
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Test verify-clean.sh
         run: .github/actions/diff-check/test-verify-clean.sh
       - name: Test extract-go-version.sh
         run: .github/actions/get-go-version/test-extract-go-version.sh
       - name: Test the update-action-pins check
         run: scripts/test-update-action-pins.sh
+      - name: Test the audit-action-pins steps
+        run: scripts/test-audit-action-pins.sh
       - name: Test check-go-version.sh
         run: scripts/test-check-go-version.sh
       - name: Test check-dev-kit-pins.sh
         run: scripts/test-check-dev-kit-pins.sh
       - name: Test renovate-relock.sh
         run: scripts/test-renovate-relock.sh
+      - name: Test check-release-notes.sh
+        run: .github/actions/check-release-notes/test-check-release-notes.sh
 
 
   # yq is not on the runner image but is in this repository's dev shell, so
   # both steps run through it.
   workflow-permissions:
     needs: shellcheck
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up nix with the shared Cachix cache
         uses: ./.github/actions/setup-nix
         with:
@@ -78,9 +84,9 @@ jobs:
         run: nix develop --command scripts/check-reusable-permissions.sh
   test-setup-nix:
     needs: shellcheck
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up nix with the shared Cachix cache
         uses: ./.github/actions/setup-nix
         with:

@@ -47,18 +47,18 @@ jobs:
        github.event.pull_request.head.ref == inputs.go-branch) &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.user.login == inputs.renovate-actor
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     concurrency:
       group: renovate-dev-kit-lock-${{ github.event.pull_request.number }}
       cancel-in-progress: true
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           path: repo
           persist-credentials: false
       # The relock script, from the dev-kit commit this workflow was called at.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
@@ -67,11 +67,8 @@ jobs:
           sparse-checkout-cone-mode: false
           persist-credentials: false
       - name: Install nix
-        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
-        with:
-          # Upstream Nix and no telemetry, as in setup-nix.
-          determinate: false
-          diagnostic-endpoint: ''
+        # Upstream Nix, as in setup-nix.
+        uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # 31.11.3
       - name: Relock
         id: relock
         working-directory: repo
@@ -79,7 +76,7 @@ jobs:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
           GO_BRANCH: ${{ inputs.go-branch }}
         run: ../dev-kit/scripts/renovate-relock.sh "$HEAD_REF" "$GO_BRANCH" >> "$GITHUB_OUTPUT"
-      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         if: steps.relock.outputs.changed == 'true'
         id: app
         with:
