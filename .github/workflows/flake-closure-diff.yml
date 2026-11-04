@@ -115,4 +115,4 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
           # Also in the log, so it is greppable from a failed neighbouring job.
-          echo "$diff"
+          echo "${diff:-No package-level change in the dev shell.}"
