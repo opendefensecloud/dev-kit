@@ -56,10 +56,10 @@ workflow() {
 		    steps:
 		      - uses: opendefensecloud/dev-kit/.github/actions/setup-nix@${sha} # ${tag}
 	EOF
-  cat > .github/workflows/update-action-pins.yml <<- EOF
+  cat > .github/workflows/action-pins.yml <<- EOF
 		jobs:
-		  update-action-pins:
-		    uses: opendefensecloud/dev-kit/.github/workflows/update-action-pins.yml@${sha} # ${tag}
+		  action-pins:
+		    uses: opendefensecloud/dev-kit/.github/workflows/action-pins.yml@${sha} # ${tag}
 	EOF
 }
 

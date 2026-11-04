@@ -70,7 +70,7 @@ SETUP_ENVTEST ?= $(LOCALGOBIN)/setup-envtest
 # the ruleset's allowed merge methods; at least one must be `true` (repo-settings fails otherwise).
 # REPO_REQUIRE_LAST_PUSH_APPROVAL requires the most recent push to be approved before merging.
 # Booleans must be `true` or `false`. Example:
-#   make repo-settings REPO_ADMIN_BYPASS=false REPO_STATUS_CHECKS='["CI","Check action pins"]' REPO_RULESET_BRANCHES='["release/*"]'
+#   make repo-settings REPO_ADMIN_BYPASS=false REPO_STATUS_CHECKS='["CI","action-pins / Check action pins"]' REPO_RULESET_BRANCHES='["release/*"]'
 REPO_ADMIN_BYPASS ?= true
 REPO_REQUIRED_APPROVING_REVIEW_COUNT ?= 1
 REPO_REQUIRE_CODE_OWNER_REVIEW ?= false
