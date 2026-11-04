@@ -1,0 +1,29 @@
+name: Upload release assets
+description: >-
+  Upload assets to a draft release, but only while it is still a draft that
+  targets the commit the assets were built from.
+inputs:
+  tag:
+    description: Tag name of the draft release.
+    required: true
+  sha:
+    description: Full commit SHA the assets were built from.
+    required: true
+  files:
+    description: Files to upload, one path or glob per line. Each must match at least one file.
+    required: true
+  token:
+    description: Token with contents write access.
+    required: false
+    default: ${{ github.token }}
+runs:
+  using: composite
+  steps:
+    - name: Upload release assets
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        TAG: ${{ inputs.tag }}
+        SHA: ${{ inputs.sha }}
+        FILES: ${{ inputs.files }}
+      run: bash "$GITHUB_ACTION_PATH/upload-release-assets.sh"

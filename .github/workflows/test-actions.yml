@@ -62,6 +62,10 @@ jobs:
         run: scripts/test-renovate-relock.sh
       - name: Test check-release-notes.sh
         run: .github/actions/check-release-notes/test-check-release-notes.sh
+      - name: Test upload-release-assets.sh
+        run: .github/actions/upload-release-assets/test-upload-release-assets.sh
+      - name: Test the release workflow steps
+        run: scripts/test-release-workflow.sh
 
 
   # yq is not on the runner image but is in this repository's dev shell, so
