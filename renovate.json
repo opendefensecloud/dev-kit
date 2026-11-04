@@ -13,6 +13,8 @@
       ],
       "datasourceTemplate": "github-runners",
       "depTypeTemplate": "github-runner"
+    },
+    {
       "customType": "regex",
       "managerFilePatterns": [
         "/^\\.github/workflows/.*\\.ya?ml$/"
