@@ -142,34 +142,42 @@ echo "    branch up-to-date: $REPO_REQUIRE_BRANCH_UP_TO_DATE"
 echo "    required status checks: $REPO_STATUS_CHECKS_EFFECTIVE"
 echo "    admin bypass: $REPO_ADMIN_BYPASS"
 
-existing=$("$GH" api "repos/$REPO/rulesets" -q '.[] | select(.name=="protect-main") | .id' 2> /dev/null || true)
-if [ -n "$existing" ]; then
-  "$GH" api "repos/$REPO/rulesets/$existing" -X PUT --input <(echo "$RULESET_JSON") > /dev/null
-  echo "    Updated existing ruleset (id: $existing)"
-else
-  "$GH" api "repos/$REPO/rulesets" -X POST --input <(echo "$RULESET_JSON") > /dev/null
-  echo "    Created new ruleset"
-fi
+# upsert_ruleset <json>: creates or updates the repository ruleset named in
+# <json>. includes_parents=false keeps an organization ruleset of the same name
+# out of the lookup; it cannot be updated through the repository endpoint.
+upsert_ruleset() {
+  local json=$1 name existing
+  name=$(echo "$json" | "$JQ" -r .name)
+  existing=$("$GH" api "repos/$REPO/rulesets?includes_parents=false" \
+    -q ".[] | select(.name==\"$name\") | .id" 2> /dev/null || true)
+  if [ -n "$existing" ]; then
+    "$GH" api "repos/$REPO/rulesets/$existing" -X PUT --input <(echo "$json") > /dev/null
+    echo "    Updated existing ruleset $name (id: $existing)"
+  else
+    "$GH" api "repos/$REPO/rulesets" -X POST --input <(echo "$json") > /dev/null
+    echo "    Created new ruleset $name"
+  fi
+}
 
-# Only the release workflow may create v* tags. Publishing a draft whose tag
-# does not exist yet creates the tag as the publishing user, so this rejects
-# publishing a draft that was not frozen with create_tag. No admin bypass:
-# that is exactly who publishes. GitHub Actions (integration 15368) creates
-# the tag in a create_tag run.
-TAG_RULESET_JSON='{ "name": "protect-release-tags", "target": "tag", "enforcement": "active",
+upsert_ruleset "$RULESET_JSON"
+
+# Release tags take two rulesets, because a bypass applies to every rule in its
+# ruleset:
+# - restrict-release-tag-creation: only GitHub Actions (integration 15368), in
+#   a create_tag run, creates v* tags. Publishing a draft whose tag does not
+#   exist yet creates the tag as the publishing user, so this rejects
+#   publishing a draft that was not frozen first. No admin bypass: admins are
+#   who publishes.
+# - protect-release-tags: nobody, workflows included, moves or deletes a v* tag.
+echo "  Configuring release tag rulesets..."
+upsert_ruleset '{ "name": "restrict-release-tag-creation", "target": "tag", "enforcement": "active",
   "conditions": { "ref_name": { "include": ["refs/tags/v*"], "exclude": [] } },
-  "rules": [ { "type": "creation" }, { "type": "update" }, { "type": "deletion" } ],
+  "rules": [ { "type": "creation" } ],
   "bypass_actors": [ { "actor_id": 15368, "actor_type": "Integration", "bypass_mode": "always" } ] }'
-
-echo "  Configuring release tag ruleset (v* created by GitHub Actions only)..."
-existing=$("$GH" api "repos/$REPO/rulesets" -q '.[] | select(.name=="protect-release-tags") | .id' 2> /dev/null || true)
-if [ -n "$existing" ]; then
-  "$GH" api "repos/$REPO/rulesets/$existing" -X PUT --input <(echo "$TAG_RULESET_JSON") > /dev/null
-  echo "    Updated existing ruleset (id: $existing)"
-else
-  "$GH" api "repos/$REPO/rulesets" -X POST --input <(echo "$TAG_RULESET_JSON") > /dev/null
-  echo "    Created new ruleset"
-fi
+upsert_ruleset '{ "name": "protect-release-tags", "target": "tag", "enforcement": "active",
+  "conditions": { "ref_name": { "include": ["refs/tags/v*"], "exclude": [] } },
+  "rules": [ { "type": "update" }, { "type": "deletion" } ],
+  "bypass_actors": [] }'
 
 echo "  Configuring merge commit settings..."
 "$GH" api "repos/$REPO" -X PATCH \

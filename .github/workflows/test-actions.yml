@@ -66,6 +66,8 @@ jobs:
         run: .github/actions/upload-release-assets/test-upload-release-assets.sh
       - name: Test the release workflow steps
         run: scripts/test-release-workflow.sh
+      - name: Test repo-settings.sh
+        run: scripts/test-repo-settings.sh
 
 
   # yq is not on the runner image but is in this repository's dev shell, so

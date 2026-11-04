@@ -277,7 +277,7 @@ It configures:
 - **Merge strategy** — merge commits only by default, configurable via `REPO_ALLOW_MERGE_COMMIT`, `REPO_ALLOW_SQUASH_MERGE`, `REPO_ALLOW_REBASE_MERGE` (these also restrict the ruleset's allowed merge methods; at least one must be enabled or `repo-settings` fails); auto-merge enabled, delete branch on merge
 - **Secret scanning** — enabled
 - **Branch protection** — a "protect-main" ruleset on the default branch (and any `REPO_RULESET_BRANCHES` patterns): requires PRs with 1 approval, dismisses stale reviews, requires review thread resolution, enforces commit signatures, requires approval of the latest push when `REPO_REQUIRE_LAST_PUSH_APPROVAL` is `true`, prevents direct pushes/deletions/non-fast-forwards
-- **Release tags** — a "protect-release-tags" ruleset: only GitHub Actions may create `v*` tags, and nobody may move or delete them. A draft must therefore be tagged by a Release run with `create_tag` before it can be published (see [Publishing a release](#publishing-a-release)). No admin bypass.
+- **Release tags** — two rulesets on `v*` tags, since a bypass applies to a whole ruleset: "restrict-release-tag-creation" lets only GitHub Actions create them, and "protect-release-tags" stops anyone, workflows included, from moving or deleting them. A draft must therefore be tagged by a Release run with `create_tag` before it can be published (see [Publishing a release](#publishing-a-release)). No admin bypass.
 
 The repository settings are configurable via make variables (set them in your `Makefile` or pass them on the command line, e.g. `make repo-settings REPO_STATUS_CHECKS='["CI","lint"]' REPO_RULESET_BRANCHES='["release/*"]'`):
 
@@ -646,7 +646,7 @@ See [`.github/workflows/release-self.yml`](.github/workflows/release-self.yml) f
 
 #### Publishing a release
 
-A push moves the untagged draft to its own commit, so never publish that draft directly: a merge landing during review changes what you publish, and published releases are immutable. With the `protect-release-tags` ruleset from `make repo-settings`, GitHub rejects it.
+A push moves the untagged draft to its own commit, so never publish that draft directly: a merge landing during review changes what you publish, and published releases are immutable. With the `restrict-release-tag-creation` ruleset from `make repo-settings`, GitHub rejects it.
 
 1. Run the Release workflow manually with `create_tag` and without `dry_run`. This tags the draft at the reviewed commit and freezes it: push runs then leave it untouched.
 2. Wait until the draft's title loses its "(assets pending)" suffix (callers with `assets: true`), or the run has finished.
