@@ -12,7 +12,8 @@ set -euo pipefail
 #   REPO_REQUIRED_APPROVING_REVIEW_COUNT   number of approving reviews required to merge
 #   REPO_REQUIRE_CODE_OWNER_REVIEW         require an approving review from code owners
 #   REPO_REQUIRE_BRANCH_UP_TO_DATE         require branches up to date (requires status checks)
-#   REPO_STATUS_CHECKS                     JSON array of required status-check contexts
+#   REPO_STATUS_CHECKS                     JSON array of required status checks: contexts or
+#                                          {context, integration_id} objects
 #   REPO_RULESET_BRANCHES                  JSON array of additional branch patterns
 #   REPO_ALLOW_MERGE_COMMIT                allow merge commits in the merge strategy and ruleset
 #   REPO_ALLOW_SQUASH_MERGE                allow squash merging
@@ -30,7 +31,27 @@ REPO=$("$GH" repo view --json nameWithOwner -q .nameWithOwner) || {
   exit 1
 }
 
-REPO_STATUS_CHECKS_EFFECTIVE=$(echo "$REPO_STATUS_CHECKS" | "$JQ" -c '[.[] | select((type == "string") and (length > 0))]')
+# Each check is a context string, or an object with its context and the ID of
+# the app that must report it ({"context": "...", "integration_id": 15368} for
+# GitHub Actions). Both become the API's {context, integration_id?} shape.
+# Empty strings are skipped; any other entry that isn't a valid check fails the
+# run instead of being dropped, since dropping it would silently stop requiring
+# that check.
+REPO_STATUS_CHECKS_EFFECTIVE=$(echo "$REPO_STATUS_CHECKS" | "$JQ" -c '[.[] |
+  select(. != "") |
+  if type == "string" then { context: . }
+  elif type == "object" then .
+  else error("not a string or an object: \(tojson)") end |
+  if (.context | type) != "string" or (.context | length) == 0 then
+    error("needs a non-empty context: \(tojson)")
+  elif (keys - ["context", "integration_id"]) != [] then
+    error("has keys other than context and integration_id: \(tojson)")
+  elif has("integration_id") and (.integration_id | type) != "number" then
+    error("integration_id must be a number: \(tojson)")
+  else . end]') || {
+  echo "error: REPO_STATUS_CHECKS must be a JSON array of contexts or {context, integration_id} objects" >&2
+  exit 1
+}
 REPO_RULESET_BRANCHES_EFFECTIVE=$(echo "$REPO_RULESET_BRANCHES" | "$JQ" -c '[.[] |
   select((type == "string") and (length > 0)) |
   if startswith("~") or startswith("refs/") then .
@@ -128,7 +149,7 @@ RULESET_JSON=$(
        ] + (if ($checks | length > 0) then
          [{ type: "required_status_checks", parameters: {
            strict_required_status_checks_policy: $upToDate,
-           required_status_checks: [$checks | .[] | { context: . }]
+           required_status_checks: $checks
          } }] else [] end)),
        bypass_actors: (if $adminBypass then [{ actor_type: "OrganizationAdmin", bypass_mode: "always" }] else [] end)
      }'
