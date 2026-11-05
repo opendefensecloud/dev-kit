@@ -2,7 +2,7 @@ name: Release
 
 # Reusable workflow that computes version and notes with git-cliff and
 # creates or updates a draft release. The tag is created during a run when
-# `create_tag` is enabled (the default), or by publishing the draft. Publishing
+# `create_tag` is enabled, or by publishing the draft. Publishing
 # the draft triggers repo-specific build jobs (Docker, Helm, docs, assets).
 #
 # The caller's stub carries the triggers (workflow_dispatch, optionally push
@@ -41,13 +41,18 @@ on:
         required: false
         type: boolean
         default: false
+      assets:
+        description: 'The caller attaches assets with upload-release-assets. The draft is titled "<version> (assets pending)" until the upload completes.'
+        required: false
+        type: boolean
+        default: false
     outputs:
       version:
-        description: 'The computed/released version.'
-        value: ${{ jobs.prepare.outputs.version }}
+        description: 'The computed/released version, or the retried draft on the asset retry path.'
+        value: ${{ jobs.prepare.outputs.version || jobs.validate-retry.outputs.version }}
       sha:
-        description: 'The commit SHA being released.'
-        value: ${{ jobs.prepare.outputs.sha }}
+        description: 'The commit SHA being released, or the commit the retried draft targets.'
+        value: ${{ jobs.prepare.outputs.sha || jobs.validate-retry.outputs.sha }}
       draft_updated:
         description: 'Whether the draft release was created or updated.'
         value: ${{ jobs.prepare.outputs.draft_updated }}
@@ -119,10 +124,13 @@ jobs:
 
       # A draft whose tag does not exist yet is the normal, update-in-place
       # case. A draft whose tag does exist is a release already cut with
-      # create_tag, so a second run must not touch it.
+      # create_tag: it is frozen for review and publishing, so no run may touch
+      # it. A push skips with a notice; a manual run fails.
       - name: Guard - no tagged draft release already pending
+        id: pending
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
 
@@ -137,6 +145,11 @@ jobs:
           done
 
           if [ ${#blocking_drafts[@]} -gt 0 ]; then
+            if [ "$EVENT_NAME" = "push" ]; then
+              echo "::notice::Draft release ${blocking_drafts[*]} is tagged and frozen for publishing; leaving it untouched."
+              echo "frozen=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             echo "::error::A draft release with an existing tag is already pending: ${blocking_drafts[*]}. Publish it to ship, or delete the draft to abandon it. Release tags cannot be deleted where protect-release-tags is active, so if its tag exists that version is burned: cut the next patch."
             exit 1
           fi
@@ -145,6 +158,7 @@ jobs:
       # consumers get the shared cliff.toml and the notes guard without keeping
       # their own copies. job.workflow_* is github.com only.
       - name: Check out release tooling
+        if: ${{ steps.pending.outputs.frozen != 'true' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ${{ job.workflow_repository }}
@@ -154,6 +168,7 @@ jobs:
 
       - name: Read release context
         id: ctx
+        if: ${{ steps.pending.outputs.frozen != 'true' }}
         env:
           CLIFF_CONFIG: ${{ inputs.cliff_config }}
         run: |
@@ -181,6 +196,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Guard - nothing is missing from the notes
+        if: ${{ steps.pending.outputs.frozen != 'true' }}
         uses: ./.release-tooling/.github/actions/check-release-notes
         with:
           range: ${{ steps.ctx.outputs.previous }}..HEAD
@@ -188,7 +204,7 @@ jobs:
 
       - name: Guard - something releasable landed
         id: releasable
-        if: ${{ inputs.version == '' }}
+        if: ${{ inputs.version == '' && steps.pending.outputs.frozen != 'true' }}
         env:
           PREVIOUS_TAG: ${{ steps.ctx.outputs.previous }}
           EVENT_NAME: ${{ github.event_name }}
@@ -217,7 +233,7 @@ jobs:
 
       - name: Compute version
         id: version
-        if: ${{ steps.releasable.outputs.releasable != 'false' }}
+        if: ${{ steps.releasable.outputs.releasable != 'false' && steps.pending.outputs.frozen != 'true' }}
         env:
           INPUT_VERSION: ${{ inputs.version }}
           COMPUTED_VERSION: ${{ steps.ctx.outputs.computed }}
@@ -244,7 +260,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Render release notes
-        if: ${{ steps.releasable.outputs.releasable != 'false' }}
+        if: ${{ steps.releasable.outputs.releasable != 'false' && steps.pending.outputs.frozen != 'true' }}
         env:
           VERSION: ${{ steps.version.outputs.version }}
           SHA: ${{ steps.version.outputs.sha }}
@@ -271,20 +287,29 @@ jobs:
       # publish. A push run reuses the pending draft: it updates the same
       # version in place, or renames the draft when the computed version moves.
       # Updating target_commitish keeps the commit that publish will tag at the
-      # latest commit the notes cover.
+      # latest commit the notes cover. Assets built for another commit or
+      # version are deleted first, so a draft only carries assets built from
+      # its own target.
       - name: Create or update draft release
         id: release
-        if: ${{ !inputs.dry_run && steps.releasable.outputs.releasable != 'false' }}
+        if: ${{ !inputs.dry_run && steps.releasable.outputs.releasable != 'false' && steps.pending.outputs.frozen != 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
           SHA: ${{ steps.version.outputs.sha }}
+          ASSETS: ${{ inputs.assets }}
         run: |
           set -euo pipefail
 
           prerelease=false
           if [[ "$VERSION" == *-* ]]; then
             prerelease=true
+          fi
+
+          # upload-release-assets drops the marker once the assets are attached.
+          title="$VERSION"
+          if [ "$ASSETS" = "true" ]; then
+            title="${VERSION} (assets pending)"
           fi
 
           release_state=$(gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" \
@@ -329,7 +354,7 @@ jobs:
             gh release create "$VERSION" \
               --repo "$GITHUB_REPOSITORY" \
               --draft \
-              --title "$VERSION" \
+              --title "$title" \
               --notes-file notes.md \
               --target "$SHA" \
               --prerelease="$prerelease"
@@ -339,10 +364,23 @@ jobs:
             else
               echo "Updating draft release ${VERSION} at ${SHA}."
             fi
+
+            current_target=$(gh release view "$draft_source" --repo "$GITHUB_REPOSITORY" \
+              --json targetCommitish --jq '.targetCommitish')
+            if [ "$draft_source" != "$VERSION" ] || [ "$current_target" != "$SHA" ]; then
+              assets=$(gh release view "$draft_source" --repo "$GITHUB_REPOSITORY" \
+                --json assets --jq '.assets[].name')
+              while IFS= read -r asset; do
+                [ -n "$asset" ] || continue
+                echo "Deleting stale asset ${asset} (built for ${draft_source} at ${current_target})."
+                gh release delete-asset "$draft_source" "$asset" --repo "$GITHUB_REPOSITORY" --yes
+              done <<< "$assets"
+            fi
+
             gh release edit "$draft_source" \
               --repo "$GITHUB_REPOSITORY" \
               --tag "$VERSION" \
-              --title "$VERSION" \
+              --title "$title" \
               --notes-file notes.md \
               --target "$SHA" \
               --prerelease="$prerelease"
@@ -355,7 +393,7 @@ jobs:
       # step exists for callers that need the tag before publishing.
       - name: Create tag
         id: tag
-        if: ${{ !inputs.dry_run && inputs.create_tag && steps.releasable.outputs.releasable != 'false' }}
+        if: ${{ !inputs.dry_run && inputs.create_tag && steps.releasable.outputs.releasable != 'false' && steps.pending.outputs.frozen != 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
@@ -391,6 +429,9 @@ jobs:
     permissions:
       # Draft releases are not visible to a read-only token.
       contents: write
+    outputs:
+      version: ${{ inputs.retry_assets_for }}
+      sha: ${{ steps.draft.outputs.sha }}
     steps:
       - name: Guard - retry is not a dry run
         if: ${{ inputs.dry_run }}
@@ -399,6 +440,7 @@ jobs:
           exit 1
 
       - name: Check the draft release exists
+        id: draft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ inputs.retry_assets_for }}
@@ -420,3 +462,13 @@ jobs:
               exit 1
               ;;
           esac
+
+          # Assets are rebuilt from the commit the draft targets, so it must be
+          # a commit, not a branch that moves.
+          sha=$(gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" \
+            --json targetCommitish --jq '.targetCommitish')
+          if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Draft ${VERSION} targets '${sha}', not a commit SHA. Re-run the Release workflow to point it at a commit."
+            exit 1
+          fi
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"

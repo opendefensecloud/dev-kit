@@ -277,6 +277,7 @@ It configures:
 - **Merge strategy** — merge commits only by default, configurable via `REPO_ALLOW_MERGE_COMMIT`, `REPO_ALLOW_SQUASH_MERGE`, `REPO_ALLOW_REBASE_MERGE` (these also restrict the ruleset's allowed merge methods; at least one must be enabled or `repo-settings` fails); auto-merge enabled, delete branch on merge
 - **Secret scanning** — enabled
 - **Branch protection** — a "protect-main" ruleset on the default branch (and any `REPO_RULESET_BRANCHES` patterns): requires PRs with 1 approval, dismisses stale reviews, requires review thread resolution, enforces commit signatures, requires approval of the latest push when `REPO_REQUIRE_LAST_PUSH_APPROVAL` is `true`, prevents direct pushes/deletions/non-fast-forwards
+- **Release tags** — two rulesets on `v*` tags, since a bypass applies to a whole ruleset: "restrict-release-tag-creation" lets only GitHub Actions create them, and "protect-release-tags" stops anyone, workflows included, from moving or deleting them. A draft must therefore be tagged by a Release run with `create_tag` before it can be published (see [Publishing a release](#publishing-a-release)). No admin bypass.
 
 The repository settings are configurable via make variables (set them in your `Makefile` or pass them on the command line, e.g. `make repo-settings REPO_STATUS_CHECKS='["CI","lint"]' REPO_RULESET_BRANCHES='["release/*"]'`):
 
@@ -299,11 +300,12 @@ The repo ships composite actions that consuming repositories reference directly.
 Pin them to a SHA with a version comment, as the action-pin check requires. The
 `<40-char-sha>` placeholders below are not copy-pasteable — substitute real digests:
 
-| Action                           | Description                                             |
-| -------------------------------- | ------------------------------------------------------- |
-| `.github/actions/setup-nix`      | Install upstream Nix and enable the shared Cachix cache |
-| `.github/actions/get-go-version` | Extract the Go version from `flake.nix`                 |
-| `.github/actions/diff-check`     | Fail if a command left uncommitted changes behind       |
+| Action                                  | Description                                                          |
+| --------------------------------------- | -------------------------------------------------------------------- |
+| `.github/actions/setup-nix`             | Install upstream Nix and enable the shared Cachix cache              |
+| `.github/actions/get-go-version`        | Extract the Go version from `flake.nix`                              |
+| `.github/actions/diff-check`            | Fail if a command left uncommitted changes behind                    |
+| `.github/actions/upload-release-assets` | Upload assets only to a draft that targets the commit they came from |
 
 `setup-nix` replaces the two-step Nix installer + Cachix preamble that every
 job needs before it can use `nix develop` as its shell. Secrets are not visible
@@ -619,9 +621,17 @@ See [`.github/workflows/release-self.yml`](.github/workflows/release-self.yml) f
 
 `release-self.yml` also shows the push wiring. The `inputs` context is empty on `push`, so the caller selects each value by event; passing an empty string to a boolean input fails workflow validation. A push run passes `create_tag: false`, so it never creates a tag or publishes. If no `feat`, `fix`, `perf` or breaking change landed since the previous tag, the run succeeds without touching the draft. A manual run still fails in that case unless `version` is supplied.
 
+#### Publishing a release
+
+A push moves the untagged draft to its own commit, so never publish that draft directly: a merge landing during review changes what you publish, and published releases are immutable. With the `restrict-release-tag-creation` ruleset from `make repo-settings`, GitHub rejects it.
+
+1. Run the Release workflow manually with `create_tag` and without `dry_run`. This tags the draft at the reviewed commit and freezes it: push runs then leave it untouched.
+2. Wait until the draft's title loses its "(assets pending)" suffix (callers with `assets: true`), or the run has finished.
+3. Review the draft and publish it.
+
 #### Attaching release assets
 
-If your caller builds assets, add a job that depends on the release job and gate it on both the call result and the draft output. The example assumes the caller also exposes `retry_assets_for` for recovery:
+If your caller builds assets, add a job that depends on the release job and gate it on both the call result and the draft output. Pass `assets: true` to the release call and upload with `upload-release-assets`. The draft is then titled "vX (assets pending)" until the upload completes. The action refuses a release that was published, or a draft that moved to another commit, while the assets were building. The `version` and `sha` outputs also cover the retry path. The example assumes the caller also exposes `retry_assets_for` for recovery:
 
 ```yaml
   assets:
@@ -636,15 +646,23 @@ If your caller builds assets, add a job that depends on the release job and gate
       id-token: write
       attestations: write
     env:
-      VERSION: ${{ inputs.retry_assets_for || needs.release.outputs.version }}
+      VERSION: ${{ needs.release.outputs.version }}
     steps:
       - name: Checkout code
         uses: actions/checkout@<40-char-sha> # v7
         with:
-          ref: ${{ needs.release.outputs.sha || inputs.retry_assets_for }}
+          ref: ${{ needs.release.outputs.sha }}
           fetch-depth: 0
           persist-credentials: false
-      # ... build, sign, attest, upload assets to the draft release ...
+      # ... build, sign, attest ...
+      - name: Upload assets to the draft release
+        uses: opendefensecloud/dev-kit/.github/actions/upload-release-assets@<40-char-sha> # <tag>
+        with:
+          tag: ${{ needs.release.outputs.version }}
+          sha: ${{ needs.release.outputs.sha }}
+          files: |
+            bin/app-*-*
+            bin/checksums.txt*
 ```
 
 #### Requirements
@@ -655,8 +673,8 @@ If your caller builds assets, add a job that depends on the release job and gate
 - **Default branch only**: Releases must be cut from the repository's default branch. A branch trigger must name the default branch; a tag trigger is accepted only when the tag points at a commit on it. Other triggers are rejected.
 - **Merge commits**: The shared config renders the merge commits on the default branch. A commit pushed directly to the branch is reported by the notes guard and fails the release unless `force` is set. Squash and rebase merges are treated the same way.
 - **Prior release tag**: The repository must already have a release tag. git-cliff derives the changelog boundary from the previous tag, and the workflow fails if there is none. Passing an explicit `version` does not bypass this.
-- **Draft maintenance**: A non-dry run creates the draft for the computed version or updates the existing draft in place (title, notes, prerelease flag and target commit). If the computed version moves while the draft is still unpublished, the draft is renamed to the new version and updated. There is one pending draft, not one per push. The `draft_updated` output is `true` whenever the draft is ready, whether this run created or updated it.
-- **Tag creation**: The tag is created during the run when `create_tag` is true (the default); a push-triggered run passes `false`, so it only maintains the draft. Otherwise publishing the draft creates the tag from the draft's target commit. The draft is written before the tag, so a failed tag leaves an updateable draft and no tag, and re-running retries. The workflow never deletes a tag.
+- **Draft maintenance**: A non-dry run creates the draft for the computed version or updates the existing draft in place (title, notes, prerelease flag and target commit). If the computed version moves while the draft is still unpublished, the draft is renamed to the new version and updated. Moving or renaming a draft deletes its assets, so a draft only carries assets built from its own target. A tagged draft is frozen: a push run skips it with a notice, a manual run fails. There is one pending draft, not one per push. The `draft_updated` output is `true` whenever the draft is ready, whether this run created or updated it.
+- **Tag creation**: The tag is created during the run when `create_tag` is true; a push-triggered run passes `false`, so it only maintains the draft. Otherwise publishing the draft creates the tag from the draft's target commit. The draft is written before the tag, so a failed tag leaves an updateable draft and no tag, and re-running retries. The workflow never deletes a tag.
 - **Tag immutability**: Where a `protect-release-tags` ruleset is active, a `v*` tag cannot be moved or deleted. Before a tag exists, abandon a draft by deleting it. Once a tag exists (for example after a run with `create_tag`), publish that draft or cut the next patch: deleting the draft leaves the tag behind and burns the version.
 - **Publishing the draft**: Publishing creates the tag at the draft's target commit (the latest commit covered by the last run) and triggers downstream workflows (Docker, Helm, docs). Prerelease versions (containing `-`) are marked as prereleases automatically. Publishing a draft whose tag already exists leaves that tag in place.
 - **Asset retry**: `retry_assets_for` skips version and notes and must name an existing **draft** release. The workflow rejects a published or missing release, and rejects the combination with `dry_run`. Asset jobs must gate on `needs.<call>.result == 'success'` (see Attaching release assets above), otherwise `always()` would run them after a failed validation.
