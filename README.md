@@ -280,18 +280,18 @@ It configures:
 
 The repository settings are configurable via make variables (set them in your `Makefile` or pass them on the command line, e.g. `make repo-settings REPO_STATUS_CHECKS='["CI","lint"]' REPO_RULESET_BRANCHES='["release/*"]'`):
 
-| Variable                               | Default | Description                                                                                                                                                                                                                                    |
-| -------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `REPO_ALLOW_MERGE_COMMIT`              | `true`  | Allow merge commits in the merge strategy                                                                                                                                                                                                      |
-| `REPO_ALLOW_SQUASH_MERGE`              | `false` | Allow squash merging                                                                                                                                                                                                                           |
-| `REPO_ALLOW_REBASE_MERGE`              | `false` | Allow rebase merging                                                                                                                                                                                                                           |
-| `REPO_REQUIRE_LAST_PUSH_APPROVAL`      | `false` | Require the most recent push to be approved before merging                                                                                                                                                                                     |
-| `REPO_ADMIN_BYPASS`                    | `true`  | When `false`, org admins cannot bypass the ruleset                                                                                                                                                                                             |
-| `REPO_REQUIRED_APPROVING_REVIEW_COUNT` | `1`     | Number of approving reviews required to merge                                                                                                                                                                                                  |
-| `REPO_REQUIRE_CODE_OWNER_REVIEW`       | `false` | Require an approving review from code owners                                                                                                                                                                                                   |
-| `REPO_REQUIRE_BRANCH_UP_TO_DATE`       | `false` | Require branches to be up to date before merging (needs at least one `REPO_STATUS_CHECKS` value; `repo-settings` fails otherwise)                                                                                                              |
-| `REPO_STATUS_CHECKS`                   | `[]`    | JSON array of status-check contexts that must pass (e.g. `["CI","update-action-pins / Check action pins"]`); each job name is used as-is, so contexts with spaces work; the `required_status_checks` rule is only added when this is non-empty |
-| `REPO_RULESET_BRANCHES`                | `[]`    | JSON array of additional branch patterns the ruleset applies to (e.g. `["release/*"]`); short names are normalized to `refs/heads/...`; the default branch is always protected                                                                 |
+| Variable                               | Default | Description                                                                                                                                                                                                                             |
+| -------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `REPO_ALLOW_MERGE_COMMIT`              | `true`  | Allow merge commits in the merge strategy                                                                                                                                                                                               |
+| `REPO_ALLOW_SQUASH_MERGE`              | `false` | Allow squash merging                                                                                                                                                                                                                    |
+| `REPO_ALLOW_REBASE_MERGE`              | `false` | Allow rebase merging                                                                                                                                                                                                                    |
+| `REPO_REQUIRE_LAST_PUSH_APPROVAL`      | `false` | Require the most recent push to be approved before merging                                                                                                                                                                              |
+| `REPO_ADMIN_BYPASS`                    | `true`  | When `false`, org admins cannot bypass the ruleset                                                                                                                                                                                      |
+| `REPO_REQUIRED_APPROVING_REVIEW_COUNT` | `1`     | Number of approving reviews required to merge                                                                                                                                                                                           |
+| `REPO_REQUIRE_CODE_OWNER_REVIEW`       | `false` | Require an approving review from code owners                                                                                                                                                                                            |
+| `REPO_REQUIRE_BRANCH_UP_TO_DATE`       | `false` | Require branches to be up to date before merging (needs at least one `REPO_STATUS_CHECKS` value; `repo-settings` fails otherwise)                                                                                                       |
+| `REPO_STATUS_CHECKS`                   | `[]`    | JSON array of status-check contexts that must pass (e.g. `["CI","action-pins / Check action pins"]`); each job name is used as-is, so contexts with spaces work; the `required_status_checks` rule is only added when this is non-empty |
+| `REPO_RULESET_BRANCHES`                | `[]`    | JSON array of additional branch patterns the ruleset applies to (e.g. `["release/*"]`); short names are normalized to `refs/heads/...`; the default branch is always protected                                                          |
 
 ### GitHub Actions
 
@@ -341,8 +341,7 @@ them together with `DEV_KIT_VERSION`.
 
 | Workflow                    | Stub triggers                                                      | Needs                           |
 | --------------------------- | ------------------------------------------------------------------ | ------------------------------- |
-| `update-action-pins.yml`    | `pull_request`                                                     |                                 |
-| `audit-action-pins.yml`     | `pull_request`, `workflow_dispatch`                                |                                 |
+| `action-pins.yml`           | `pull_request`, `workflow_dispatch`                                |                                 |
 | `conventional-commits.yml`  | `pull_request` (opened, edited, synchronize, reopened)             | `.commitlintrc.yml` in the repo |
 | `osv-scanner.yml`           | `pull_request`, `push` to main, weekly                             | optional `scan-args` input      |
 | `issues-add-labels.yaml`    | `issues` (opened, reopened)                                        |                                 |
@@ -356,53 +355,31 @@ must not require `osv-scanner / scan-pr / osv-scan`: that PR scan diffs
 against `$GITHUB_BASE_REF`, which is empty in a merge queue (see
 `osv-scanner.yml`).
 
-`.github/workflows/update-action-pins.yml`:
+`.github/workflows/action-pins.yml`:
 
 ```yaml
-name: Update Action Pins
-on:
-  pull_request:
-permissions:
-  contents: read
-jobs:
-  update-action-pins:
-    uses: opendefensecloud/dev-kit/.github/workflows/update-action-pins.yml@<40-char-sha> # <tag>
-```
-
-It also fails when a pin's comment is anything but its version
-(`uses: <action>@<sha> # <version>`): zizmor checks the version against the SHA
-only in that form, and skips a pin without a comment or with more text after
-the version, a `# zizmor: ignore[...]` included.
-
-On pull requests it also fails when a pin's SHA changes but its version comment
-does not: new code under a version that was already reviewed means upstream
-moved the tag, or the PR swapped the SHA. Pins should name a full release tag
-(`# v7.0.1`, not `# v7`), since a major tag moves with every release and would
-trip the check on each update.
-
-`.github/workflows/audit-action-pins.yml`:
-
-```yaml
-name: Audit Action Pins
+name: Action Pins
 on:
   pull_request:
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  audit-action-pins:
-    uses: opendefensecloud/dev-kit/.github/workflows/audit-action-pins.yml@<40-char-sha> # <tag>
+  action-pins:
+    uses: opendefensecloud/dev-kit/.github/workflows/action-pins.yml@<40-char-sha> # <tag>
 ```
 
-It runs zizmor with the job's `GITHUB_TOKEN`, which zizmor needs to look up
-upstream tags and branches, and fails on an impostor commit or a version comment
-that doesn't match its SHA. Neither `# zizmor: ignore[...]` comments nor a
-`zizmor.yml` in the repo turn a finding off.
-
-On pull requests it only fails on pins the PR adds or changes: a pinned SHA's
-code never changes, so a finding on an untouched pin means upstream moved a tag,
-and would otherwise block every PR. A manual `workflow_dispatch` run audits
-every pin, e.g. when a repo adopts the workflow.
+It reports two checks, `action-pins / Check action pins` and
+`action-pins / Audit action pins`; require both. Every pin must read
+`uses: <action>@<sha> # <version>`, with nothing after the version. On pull
+requests `Check action pins` also fails when a pin's SHA changes but its version
+does not, since that means upstream moved the tag or the PR swapped the SHA. The
+version should therefore be a full release tag (`# v7.0.1`, not `# v7`): a major
+tag moves with every release, so each digest update would trip the check. Neither
+`# zizmor: ignore[...]` comments nor a `zizmor.yml` turn a finding off. On pull
+requests the audit only covers pins the PR changes; a `workflow_dispatch` run
+audits every pin, e.g. when a repo adopts the workflow. The header of the
+workflow lists what each check fails on.
 
 `.github/workflows/conventional-commits.yml`:
 
@@ -515,8 +492,8 @@ jobs:
 
 A job from a reusable workflow reports as `<stub job> / <called job>`, so
 `REPO_STATUS_CHECKS` needs the new names after switching to a stub, e.g.
-`update-action-pins / Check action pins`,
-`audit-action-pins / Audit action pins`, `conventional-commits / PR Title` and
+`action-pins / Check action pins`,
+`action-pins / Audit action pins`, `conventional-commits / PR Title` and
 `conventional-commits / Commit Messages`. osv-scanner nests Google's reusable
 workflow one level deeper, so its scan reports as
 `osv-scanner / scan-pr / osv-scan`. Update the list and rerun `make repo-settings` in the same change, or the old

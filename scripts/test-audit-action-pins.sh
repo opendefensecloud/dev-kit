@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Runs the steps from audit-action-pins.yml itself (extracted with yq), so the
-# test cannot drift from what CI runs; the filter runs on findings shaped like
-# zizmor's json-v1 output.
+# Runs the audit-pins steps from action-pins.yml itself (extracted with yq), so
+# the test cannot drift from what CI runs; the filter runs on findings shaped
+# like zizmor's json-v1 output.
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -14,7 +14,7 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 step() {
   local run
   run="$(yq ".jobs.audit-pins.steps[] | select(.name == \"$1\") | .run" \
-    "$ROOT/.github/workflows/audit-action-pins.yml")"
+    "$ROOT/.github/workflows/action-pins.yml")"
   [[ -n "$run" ]] || {
     echo "FAIL: step '$1' not found" >&2
     exit 1
@@ -38,7 +38,7 @@ report() {
 }
 
 # The steps below run as `bash -eo pipefail`, which `shell: bash` gives in CI.
-report bash "$(yq '.defaults.run.shell' "$ROOT/.github/workflows/audit-action-pins.yml")" \
+report bash "$(yq '.defaults.run.shell' "$ROOT/.github/workflows/action-pins.yml")" \
   "steps run with pipefail"
 
 # finding <ident>: prints one finding on .github/workflows/a.yml line 7 as

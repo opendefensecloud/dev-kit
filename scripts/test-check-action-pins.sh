@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Runs the checks from update-action-pins.yml itself (extracted with yq), so
+# Runs the check-pins steps from action-pins.yml itself (extracted with yq), so
 # the test cannot drift from what CI runs.
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -13,7 +13,7 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 step() {
   local run
   run="$(yq ".jobs.check-pins.steps[] | select(.name == \"$1\") | .run" \
-    "$ROOT/.github/workflows/update-action-pins.yml")"
+    "$ROOT/.github/workflows/action-pins.yml")"
   [[ -n "$run" ]] || {
     echo "FAIL: step '$1' not found" >&2
     exit 1
@@ -39,7 +39,7 @@ report() {
 }
 
 # Steps run as `bash -eo pipefail`, which `shell: bash` gives in CI.
-report bash "$(yq '.defaults.run.shell' "$ROOT/.github/workflows/update-action-pins.yml")" \
+report bash "$(yq '.defaults.run.shell' "$ROOT/.github/workflows/action-pins.yml")" \
   "steps run with pipefail"
 
 # expect <pass|fail> <description> <file under .github/> <content>: runs the
