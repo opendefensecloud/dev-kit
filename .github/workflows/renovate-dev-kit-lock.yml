@@ -1,8 +1,9 @@
 name: renovate-dev-kit-lock
 
-# Reusable only. Commits a relocked flake.lock to the two Renovate PRs that
-# change flake.nix through regex managers, which can't update the lock:
-# renovate/dev-kit (bumped tag) and renovate/go-version (goVersion, which needs
+# Reusable only. Commits a relocked flake.lock to the Renovate PRs that change
+# flake.nix through regex managers, which can't update the lock:
+# renovate/dev-kit and renovate/major-dev-kit (bumped tag; Renovate keeps major
+# updates on their own branch) and renovate/go-version (goVersion, which needs
 # a newer go-overlay). scripts/renovate-relock.sh does the relocking, fetched
 # from the dev-kit commit this workflow was called at; it is a no-op once the
 # lock is current, so a re-run after its own commit changes nothing. See
@@ -20,6 +21,10 @@ on:
         description: Renovate's branch for the dev-kit group.
         type: string
         default: renovate/dev-kit
+      major-branch:
+        description: Renovate's branch for major updates of the dev-kit group.
+        type: string
+        default: renovate/major-dev-kit
       go-branch:
         description: Renovate's branch for the Go version group.
         type: string
@@ -44,6 +49,7 @@ jobs:
     # same-named branch from someone else doesn't get a bot commit.
     if: >-
       (github.event.pull_request.head.ref == inputs.branch ||
+       github.event.pull_request.head.ref == inputs.major-branch ||
        github.event.pull_request.head.ref == inputs.go-branch) &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.user.login == inputs.renovate-actor

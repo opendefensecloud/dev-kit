@@ -467,11 +467,11 @@ jobs:
 ```
 
 `.github/workflows/renovate-dev-kit-lock.yml` commits a relocked `flake.lock`
-to two Renovate PRs that change `flake.nix` but can't update the lock:
-`renovate/dev-kit` (`nix flake lock` for the bumped tag) and
-`renovate/go-version` (`nix flake update go-overlay`, so the new `goVersion`
-exists in the shell; if go-overlay does not carry it yet, the job fails and can
-be re-run later). It commits as the org's dev-kit GitHub App, so the commit
+to the Renovate PRs that change `flake.nix` but can't update the lock:
+`renovate/dev-kit` and `renovate/major-dev-kit` (`nix flake lock` for the
+bumped tag) and `renovate/go-version` (`nix flake update go-overlay`, so the
+new `goVersion` exists in the shell; if go-overlay does not carry it yet, the
+job fails and can be re-run later). It commits as the org's dev-kit GitHub App, so the commit
 is signed and starts CI; any other PR skips it:
 
 ```yaml
