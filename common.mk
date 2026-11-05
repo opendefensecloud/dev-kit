@@ -373,7 +373,7 @@ $(LOCALGOBIN)/ocm: $(LOCALGOBIN) $(TOOL_LOCK)
 	@module=$$(awk "/^ocm / {print \$$2}" $(TOOL_LOCK)); \
 	version=$$(cut -d@ -f2 <<< $$module); \
 	test -s $@ && grep -q "$$version" $(LOCALGOBIN)/.ocm-version 2>/dev/null || \
-	curl -s https://ocm.software/install.sh | VERSION_OCM=$$version bash -s -- $(LOCALGOBIN) && echo $$version > $(LOCALGOBIN)/.ocm-version
+	curl -s https://ocm.software/install.sh | OCM_VERSION=$${version#v} bash -s -- $(LOCALGOBIN) && echo $$version > $(LOCALGOBIN)/.ocm-version
 
 # Rewrites the common.mk: rule in the calling project's Makefile to the current bootstrap format.
 # Run once per repository to migrate from any older recipe shape.
