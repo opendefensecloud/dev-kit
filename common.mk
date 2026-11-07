@@ -64,13 +64,15 @@ SETUP_ENVTEST ?= $(LOCALGOBIN)/setup-envtest
 # repo-settings — repository configuration, configurable per repository.
 # Branch protection: the default branch is always protected; REPO_RULESET_BRANCHES
 # adds further branch patterns (a JSON array, e.g. '["release/*"]'; short names are
-# normalized to refs/heads/...). REPO_STATUS_CHECKS is a JSON array of status-check
-# contexts that must pass (each job name is used as-is, so contexts with spaces work).
+# normalized to refs/heads/...). REPO_STATUS_CHECKS is a JSON array of status checks
+# that must pass: a context (each job name is used as-is, so contexts with spaces
+# work), or {"context": "...", "integration_id": <app ID>} to accept only that app's
+# check, e.g. 15368 for GitHub Actions; an invalid entry fails repo-settings.
 # REPO_ALLOW_MERGE_COMMIT/SQUASH_MERGE/REBASE_MERGE configure the merge strategy and
 # the ruleset's allowed merge methods; at least one must be `true` (repo-settings fails otherwise).
 # REPO_REQUIRE_LAST_PUSH_APPROVAL requires the most recent push to be approved before merging.
 # Booleans must be `true` or `false`. Example:
-#   make repo-settings REPO_ADMIN_BYPASS=false REPO_STATUS_CHECKS='["CI","action-pins / Check action pins"]' REPO_RULESET_BRANCHES='["release/*"]'
+#   make repo-settings REPO_ADMIN_BYPASS=false REPO_STATUS_CHECKS='["CI",{"context":"action-pins / Check action pins","integration_id":15368}]' REPO_RULESET_BRANCHES='["release/*"]'
 REPO_ADMIN_BYPASS ?= true
 REPO_REQUIRED_APPROVING_REVIEW_COUNT ?= 1
 REPO_REQUIRE_CODE_OWNER_REVIEW ?= false
