@@ -5,3 +5,4 @@
 DEV_KIT_VERSION := main
 DEV_KIT_FORMATTING := on
 include common.mk
+REPO_STATUS_CHECKS := ["Check action pins", "Audit action pins"]
