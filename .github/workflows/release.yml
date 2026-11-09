@@ -1,12 +1,14 @@
 name: Release
 
-# Reusable workflow that computes version and notes with git-cliff and
-# creates or updates a draft release. The tag is created during a run when
-# `create_tag` is enabled (the default), or by publishing the draft. Publishing
-# the draft triggers repo-specific build jobs (Docker, Helm, docs, assets).
+# Reusable workflow, step 1 of 2: computes version and notes with git-cliff,
+# checks the notes and tags the dispatched commit. It creates no release. The
+# caller then builds its assets from the tag (optional) and calls
+# release-draft.yml, which creates the draft with notes and assets in one go.
+# Publishing the draft triggers repo-specific delivery (Docker, Helm, docs).
 #
 # The caller's stub carries the triggers (workflow_dispatch, optionally push
-# to the default branch). See "Release workflow" in the README.
+# to the default branch, which should run as a dry run). See "Release
+# workflow" in the README.
 
 on:
   workflow_call:
@@ -17,7 +19,7 @@ on:
         type: string
         default: ''
       dry_run:
-        description: 'Render the version and notes only. Do not create or update a release, or create a tag.'
+        description: 'Render the version and notes only. Do not create a tag.'
         required: false
         type: boolean
         default: true
@@ -26,21 +28,21 @@ on:
         required: false
         type: boolean
         default: false
-      retry_assets_for:
-        description: 'Recovery only. Tag of an existing DRAFT release whose asset upload failed. Skips version and notes.'
-        required: false
-        type: string
-        default: ''
       cliff_config:
         description: 'Path to a git-cliff config. Defaults to the shared config from the workflow repository.'
         required: false
         type: string
         default: '.release-tooling/cliff.toml'
-      create_tag:
-        description: 'Create the release tag now instead of when the draft is published.'
+      required_checks:
+        description: 'JSON array of check-run names that must have passed on the released commit before it is tagged, e.g. ["test-e2e / test-e2e"].'
         required: false
-        type: boolean
-        default: false
+        type: string
+        default: '[]'
+      checks_skip_paths:
+        description: 'JSON array of path globs whose changes do not run the required checks (the paths-ignore of the workflow that runs them). A commit touching only these may be released on the checks of the commit before it.'
+        required: false
+        type: string
+        default: '["docs/**", "**/*.md"]'
     outputs:
       version:
         description: 'The computed/released version.'
@@ -48,11 +50,8 @@ on:
       sha:
         description: 'The commit SHA being released.'
         value: ${{ jobs.prepare.outputs.sha }}
-      draft_updated:
-        description: 'Whether the draft release was created or updated.'
-        value: ${{ jobs.prepare.outputs.draft_updated }}
       tag_created:
-        description: 'Whether this run created the release tag.'
+        description: 'Whether this run created the release tag. Gate the asset build and release-draft.yml on it.'
         value: ${{ jobs.prepare.outputs.tag_created }}
 
 permissions:
@@ -60,19 +59,18 @@ permissions:
 
 jobs:
   prepare:
-    name: Compute version and notes
-    if: ${{ inputs.retry_assets_for == '' }}
+    name: Compute version, notes and tag
     runs-on: ubuntu-26.04
     permissions:
-      contents: write # create the tag ref and the draft release
+      contents: write # create the tag ref
+      checks: read # required_checks
     outputs:
       version: ${{ steps.version.outputs.version }}
       sha: ${{ steps.version.outputs.sha }}
-      draft_updated: ${{ steps.release.outputs.draft_updated }}
       tag_created: ${{ steps.tag.outputs.tag_created }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -117,27 +115,47 @@ jobs:
         with:
           tool: git-cliff@2.13.1
 
-      # A draft whose tag does not exist yet is the normal, update-in-place
-      # case. A draft whose tag does exist is a release already cut with
-      # create_tag, so a second run must not touch it.
-      - name: Guard - no tagged draft release already pending
+      # Any draft blocks a release. A tagged one is a release that was cut but
+      # never published; cutting the next one on top would skip it. An
+      # untagged one is left over from the moving-draft flow before v5:
+      # publishing it would tag whatever commit it last pointed at, with
+      # whatever assets it carries, so it must be deleted, not kept around.
+      # A dry run (and so a push run) only previews, and just warns.
+      - name: Guard - no draft release pending
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
 
           draft_tags=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 \
             --json tagName,isDraft --jq '.[] | select(.isDraft) | .tagName')
 
-          blocking_drafts=()
+          cut=() untagged=()
           for tag in $draft_tags; do
             if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
-              blocking_drafts+=("$tag")
+              cut+=("$tag")
+            else
+              untagged+=("$tag")
             fi
           done
 
-          if [ ${#blocking_drafts[@]} -gt 0 ]; then
-            echo "::error::A draft release with an existing tag is already pending: ${blocking_drafts[*]}. Publish it to ship, or delete the draft to abandon it. Release tags cannot be deleted where protect-release-tags is active, so if its tag exists that version is burned: cut the next patch."
+          msgs=()
+          if [ ${#cut[@]} -gt 0 ]; then
+            msgs+=("Release ${cut[*]} was cut but not published. Publish its draft to ship it. Its tag cannot be deleted where protect-release-tags is active, so to abandon it delete the draft and release the next patch.")
+          fi
+          if [ ${#untagged[@]} -gt 0 ]; then
+            msgs+=("Draft ${untagged[*]} has no tag (left over from dev-kit v4's moving draft). Delete it: publishing it would tag the commit it last pointed at, with its old assets.")
+          fi
+
+          for msg in "${msgs[@]}"; do
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "::warning::${msg}"
+            else
+              echo "::error::${msg}"
+            fi
+          done
+          if [ ${#msgs[@]} -gt 0 ] && [ "$DRY_RUN" != "true" ]; then
             exit 1
           fi
 
@@ -145,17 +163,57 @@ jobs:
       # consumers get the shared cliff.toml and the notes guard without keeping
       # their own copies. job.workflow_* is github.com only.
       - name: Check out release tooling
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
           path: .release-tooling
           persist-credentials: false
 
+      # A burned tag was created by a release run that never got published
+      # (wrong commit, a build that cannot pass, a run nobody re-ran). It cannot
+      # be moved or deleted, and it carries no release, so nothing was shipped
+      # from it. Its changes belong to the next release: git-cliff is told to
+      # ignore it, so the notes, the notes guard and the bump all start at the
+      # last tag that was actually released. Drafts never get here: the guard
+      # above blocks on them.
+      - name: Find burned release tags
+        id: burned
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          releases=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 \
+            --json tagName --jq '.[].tagName')
+
+          burned=()
+          while IFS= read -r tag; do
+            [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]] || continue
+            if ! grep -qxF -- "$tag" <<< "$releases"; then
+              burned+=("$tag")
+            fi
+          done < <(git tag --merged HEAD --list 'v*' | sort -V)
+
+          if [ ${#burned[@]} -eq 0 ]; then
+            echo "burned=" >> "$GITHUB_OUTPUT"
+            echo "ignore=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # shellcheck disable=SC2016 # the $ in the sed bracket expression is literal
+          ignore="^($(printf '%s\n' "${burned[@]}" | sed 's/[][\.*^$()+?{}|]/\\&/g' | paste -sd '|'))$"
+          echo "::notice::Tagged but never released: ${burned[*]}. Their changes go into this release."
+          {
+            echo "burned=${burned[*]}"
+            echo "ignore=${ignore}"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Read release context
         id: ctx
         env:
           CLIFF_CONFIG: ${{ inputs.cliff_config }}
+          IGNORE_TAGS: ${{ steps.burned.outputs.ignore }}
         run: |
           set -euo pipefail
 
@@ -164,15 +222,23 @@ jobs:
             exit 1
           fi
 
-          git cliff --config "$CLIFF_CONFIG" --use-branch-tags --unreleased --bump --context > ctx.json
+          # An empty --ignore-tags pattern would match every tag.
+          ignore=()
+          if [ -n "$IGNORE_TAGS" ]; then
+            ignore=(--ignore-tags "$IGNORE_TAGS")
+          fi
 
-          previous_tag=$(jq -r '.[0].previous.version // empty' ctx.json)
-          computed_version=$(jq -r '.[0].version // empty' ctx.json)
-
+          previous_tag=$(git cliff --config "$CLIFF_CONFIG" --use-branch-tags --unreleased "${ignore[@]}" --context \
+            | jq -r '.[0].previous.version // empty')
           if [ -z "$previous_tag" ]; then
             echo "::error::Could not work out the previous release tag from git-cliff."
             exit 1
           fi
+
+          # An explicit range: --unreleased drops the commits of an ignored
+          # tag, a range from the last released tag keeps them.
+          git cliff --config "$CLIFF_CONFIG" --use-branch-tags "${previous_tag}..HEAD" "${ignore[@]}" --bump --context > ctx.json
+          computed_version=$(jq -r '.[0].version // empty' ctx.json)
 
           echo "Releasing everything since ${previous_tag}."
           {
@@ -201,11 +267,12 @@ jobs:
           ' ctx.json)
 
           if [ "$releasable_count" -eq 0 ]; then
-            # A push to the default branch has nothing to maintain; only an
-            # explicitly requested release (manual dispatch or tag push) should
-            # fail for this.
-            if [ "$EVENT_NAME" = "push" ] && [ "$REF_TYPE" = "branch" ]; then
-              echo "::notice::No feat/fix/perf or breaking commits since ${PREVIOUS_TAG}; leaving the draft release untouched."
+            # A push to the default branch has nothing to preview, and a
+            # scheduled run has nothing to cut; only an explicitly requested
+            # release (manual dispatch or tag push) should fail for this.
+            if { [ "$EVENT_NAME" = "push" ] && [ "$REF_TYPE" = "branch" ]; } ||
+              [ "$EVENT_NAME" = "schedule" ]; then
+              echo "::notice::No feat/fix/perf or breaking commits since ${PREVIOUS_TAG}; nothing to release."
               echo "releasable=false" >> "$GITHUB_OUTPUT"
               exit 0
             fi
@@ -227,9 +294,21 @@ jobs:
           version="${INPUT_VERSION:-$COMPUTED_VERSION}"
           release_sha=$(git rev-parse HEAD)
 
-          if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-.+)?$ ]]; then
+          if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
             echo "::error::Version must look like v1.2.3 or v1.2.3-rc1, got '${version}'."
             exit 1
+          fi
+
+          # A computed version can land on a burned tag: its number is taken
+          # for good, so use the next free patch. An explicit version is used
+          # as given or not at all.
+          if [ -z "$INPUT_VERSION" ]; then
+            while git rev-parse -q --verify "refs/tags/${version}" >/dev/null; do
+              taken=$version
+              IFS=. read -r major minor patch <<< "${version#v}"
+              version="v${major}.${minor}.$((patch + 1))"
+              echo "::notice::${taken} is taken by a tag that was never released; using ${version}."
+            done
           fi
 
           if git rev-parse -q --verify "refs/tags/${version}" >/dev/null; then
@@ -243,20 +322,137 @@ jobs:
             echo "sha=${release_sha}"
           } >> "$GITHUB_OUTPUT"
 
+      # A commit is tagged only once its required checks (e2e, typically) have
+      # passed on it. A commit that only touches checks_skip_paths runs no such
+      # checks; it is released on those of the nearest earlier commit that
+      # ran them, as long as everything since then is skippable too. A code
+      # commit whose checks have not started yet therefore fails here rather
+      # than being released on an older commit's result.
+      - name: Guard - required checks passed
+        if: ${{ steps.releasable.outputs.releasable != 'false' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ steps.version.outputs.sha }}
+          REQUIRED_CHECKS: ${{ inputs.required_checks }}
+          SKIP_PATHS: ${{ inputs.checks_skip_paths }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          for json in "$REQUIRED_CHECKS" "$SKIP_PATHS"; do
+            if ! jq -e 'type == "array" and all(.[]; type == "string" and length > 0)' <<< "$json" > /dev/null 2>&1; then
+              echo "::error::required_checks and checks_skip_paths must be JSON arrays of non-empty strings, got: ${json}"
+              exit 1
+            fi
+          done
+
+          mapfile -t required < <(jq -r '.[]' <<< "$REQUIRED_CHECKS")
+          mapfile -t skip < <(jq -r '.[]' <<< "$SKIP_PATHS")
+          if [ ${#required[@]} -eq 0 ]; then
+            echo "No required_checks configured."
+            exit 0
+          fi
+
+          # A dry run (and so a push run, whose checks have only just started)
+          # reports the state without failing.
+          fail() {
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "::notice::Not releasable yet: $1"
+              exit 0
+            fi
+            echo "::error::$1"
+            exit 1
+          }
+
+          # Every check run on the commit as "name<TAB>status<TAB>conclusion".
+          # The API returns the latest run per check, so a re-run that passed
+          # replaces the failure it re-ran.
+          check_runs() {
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/$1/check-runs?per_page=100" \
+              --jq '.check_runs[] | [.name, .status, (.conclusion // "")] | @tsv'
+          }
+
+          # GitHub-style globs: * and ** both cross directories, and a leading
+          # **/ also matches at the top level.
+          skippable() {
+            local p
+            for p in "${skip[@]}"; do
+              # shellcheck disable=SC2053 # $p is a glob on purpose
+              if [[ $1 == $p ]] || { [[ $p == '**/'* ]] && [[ $1 == ${p#'**/'} ]]; }; then
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          # Walk back along the default branch to the newest commit that ran
+          # any of the required checks.
+          base="" runs=""
+          for commit in $(git rev-list --first-parent --max-count=50 "$SHA"); do
+            runs=$(check_runs "$commit")
+            for name in "${required[@]}"; do
+              if cut -f1 <<< "$runs" | grep -qxF -- "$name"; then
+                base=$commit
+                break 2
+              fi
+            done
+          done
+          if [ -z "$base" ]; then
+            fail "None of ${REQUIRED_CHECKS} ran on ${SHA} or the 49 commits before it."
+          fi
+
+          if [ "$base" != "$SHA" ]; then
+            while IFS= read -r f; do
+              if ! skippable "$f"; then
+                fail "${SHA} has no ${REQUIRED_CHECKS} yet, and ${f} changed since ${base}, the last commit that ran them. Wait for the checks to finish, then run again."
+              fi
+            done < <(git diff --no-renames --name-only "$base" "$SHA")
+            echo "${SHA} only changes checks_skip_paths since ${base}; using that commit's checks."
+          fi
+
+          bad=()
+          for name in "${required[@]}"; do
+            states=$(awk -F'\t' -v n="$name" '$1 == n { print $2 "/" $3 }' <<< "$runs" | sort -u)
+            if [ "$states" != "completed/success" ]; then
+              bad+=("${name}: ${states:-missing}")
+            fi
+          done
+          if [ ${#bad[@]} -gt 0 ]; then
+            fail "Required checks on ${base} have not passed: $(IFS=';'; echo "${bad[*]}")."
+          fi
+          echo "Required checks passed on ${base}."
+
       - name: Render release notes
         if: ${{ steps.releasable.outputs.releasable != 'false' }}
         env:
           VERSION: ${{ steps.version.outputs.version }}
           SHA: ${{ steps.version.outputs.sha }}
           CLIFF_CONFIG: ${{ inputs.cliff_config }}
+          PREVIOUS_TAG: ${{ steps.ctx.outputs.previous }}
+          IGNORE_TAGS: ${{ steps.burned.outputs.ignore }}
+          BURNED: ${{ steps.burned.outputs.burned }}
         run: |
           set -euo pipefail
 
-          git cliff --config "$CLIFF_CONFIG" --use-branch-tags --unreleased --tag "$VERSION" --output notes.md
+          ignore=()
+          if [ -n "$IGNORE_TAGS" ]; then
+            ignore=(--ignore-tags "$IGNORE_TAGS")
+          fi
 
-          if [ -z "$(tr -d '[:space:]' < notes.md)" ]; then
+          mkdir -p release-notes
+          git cliff --config "$CLIFF_CONFIG" --use-branch-tags "${PREVIOUS_TAG}..HEAD" "${ignore[@]}" \
+            --tag "$VERSION" --output release-notes/notes.md
+
+          if [ -z "$(tr -d '[:space:]' < release-notes/notes.md)" ]; then
             echo "::error::Rendered notes are empty."
             exit 1
+          fi
+
+          if [ -n "$BURNED" ]; then
+            {
+              echo
+              echo "> ${BURNED// /, } was tagged but never released. Its changes are included here."
+            } >> release-notes/notes.md
           fi
 
           {
@@ -264,16 +460,78 @@ jobs:
             echo
             echo "<sub>commit \`${SHA}\`</sub>"
             echo
-            cat notes.md
+            cat release-notes/notes.md
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # A draft release does not create its tag; GitHub materialises it on
-      # publish. A push run reuses the pending draft: it updates the same
-      # version in place, or renames the draft when the computed version moves.
-      # Updating target_commitish keeps the commit that publish will tag at the
-      # latest commit the notes cover.
-      - name: Create or update draft release
-        id: release
+      # The draft is checked against its tag once, when it is created. Only a
+      # tag that cannot move keeps that true until someone publishes: a tag
+      # moved in between would publish assets built from another commit. So
+      # no tag is created without an active ruleset that refuses moving and
+      # deleting it (`make repo-settings`, protect-release-tags).
+      - name: Guard - release tags are protected
+        if: ${{ steps.releasable.outputs.releasable != 'false' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          ref="refs/tags/${VERSION}"
+          matches() { # matches <json array of ref patterns>: does one match $ref?
+            local p
+            while IFS= read -r p; do
+              [ -n "$p" ] || continue
+              # shellcheck disable=SC2053 # $p is a glob on purpose
+              if [ "$p" = "~ALL" ] || [[ $ref == $p ]]; then
+                return 0
+              fi
+            done < <(jq -r '.[]?' <<< "$1")
+            return 1
+          }
+
+          protected=""
+          for id in $(gh api --paginate "repos/${GITHUB_REPOSITORY}/rulesets?includes_parents=true&per_page=100" \
+            --jq '.[] | select(.target == "tag" and .enforcement == "active") | .id'); do
+            ruleset=$(gh api "repos/${GITHUB_REPOSITORY}/rulesets/${id}?includes_parents=true")
+            rules=$(jq -c '[.rules[].type]' <<< "$ruleset")
+            if jq -e 'index("update") and index("deletion")' <<< "$rules" > /dev/null &&
+              matches "$(jq -c '.conditions.ref_name.include // []' <<< "$ruleset")" &&
+              ! matches "$(jq -c '.conditions.ref_name.exclude // []' <<< "$ruleset")"; then
+              protected=$(jq -r .name <<< "$ruleset")
+              break
+            fi
+          done
+
+          if [ -z "$protected" ]; then
+            msg="No active tag ruleset refuses moving and deleting ${ref}. Without one, a tag moved before publishing ships assets built from another commit. Run 'make repo-settings' (protect-release-tags) as an admin."
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "::warning::${msg}"
+              exit 0
+            fi
+            echo "::error::${msg}"
+            exit 1
+          fi
+          echo "${ref} is protected by ruleset ${protected}."
+
+      # The notes are rendered here, before the tag exists, and handed to
+      # release-draft.yml as an artifact. Rendering them again after tagging
+      # would see the new tag and produce a different range.
+      - name: Hand over release notes
+        if: ${{ !inputs.dry_run && steps.releasable.outputs.releasable != 'false' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-notes
+          path: release-notes/notes.md
+          if-no-files-found: error
+          # A re-run of this job uploads again into the same run.
+          overwrite: true
+
+      # Tags the commit the notes were computed for. Release tags cannot be
+      # moved or deleted where protect-release-tags is active, so a tag on the
+      # wrong commit burns the version: release the next patch.
+      - name: Create tag
+        id: tag
         if: ${{ !inputs.dry_run && steps.releasable.outputs.releasable != 'false' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -282,96 +540,17 @@ jobs:
         run: |
           set -euo pipefail
 
-          prerelease=false
-          if [[ "$VERSION" == *-* ]]; then
-            prerelease=true
-          fi
-
-          release_state=$(gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" \
-            --json isDraft --jq 'if .isDraft then "draft" else "published" end' 2>/dev/null || echo "missing")
-
-          if [ "$release_state" = "published" ]; then
-            echo "::error::Release ${VERSION} is already published and cannot be updated."
-            exit 1
-          fi
-
-          draft_source=""
-          if [ "$release_state" = "draft" ]; then
-            draft_source="$VERSION"
-          else
-            # The computed version moves when a feature lands on top of fixes.
-            # Reuse the pending draft (and anything already attached to it) by
-            # renaming it, instead of leaving a stale draft behind.
-            candidates=()
-            draft_tags=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 \
-              --json tagName,isDraft --jq '.[] | select(.isDraft) | .tagName')
-            while IFS= read -r tag; do
-              [ -n "$tag" ] || continue
-              if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
-                echo "::error::A draft release with an existing tag is already pending: ${tag}. Publish it or delete the draft before running this workflow."
-                exit 1
-              fi
-              candidates+=("$tag")
-            done <<< "$draft_tags"
-
-            case "${#candidates[@]}" in
-              0) ;;
-              1) draft_source="${candidates[0]}" ;;
-              *)
-                echo "::error::Multiple draft releases are pending: ${candidates[*]}. Delete all but one and re-run."
-                exit 1
-                ;;
-            esac
-          fi
-
-          if [ -z "$draft_source" ]; then
-            echo "Creating draft release ${VERSION} at ${SHA}."
-            gh release create "$VERSION" \
-              --repo "$GITHUB_REPOSITORY" \
-              --draft \
-              --title "$VERSION" \
-              --notes-file notes.md \
-              --target "$SHA" \
-              --prerelease="$prerelease"
-          else
-            if [ "$draft_source" != "$VERSION" ]; then
-              echo "Renaming draft release ${draft_source} to ${VERSION}."
-            else
-              echo "Updating draft release ${VERSION} at ${SHA}."
+          if ! gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f "ref=refs/tags/${VERSION}" -f "sha=${SHA}" > /dev/null; then
+            # The request can fail after GitHub created the ref. A tag at this
+            # commit is the outcome we wanted; one elsewhere is not.
+            existing=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${VERSION}" \
+              --jq '.object.sha' 2>/dev/null || true)
+            if [ "$existing" != "$SHA" ]; then
+              echo "::error::Creating tag ${VERSION} at ${SHA} failed${existing:+; it already points at ${existing}}."
+              exit 1
             fi
-            gh release edit "$draft_source" \
-              --repo "$GITHUB_REPOSITORY" \
-              --tag "$VERSION" \
-              --title "$VERSION" \
-              --notes-file notes.md \
-              --target "$SHA" \
-              --prerelease="$prerelease"
-          fi
-
-          echo "draft_updated=true" >> "$GITHUB_OUTPUT"
-
-      # The draft is written first, so a failed tag leaves an updateable draft
-      # and no tag behind. Publishing the draft creates the tag anyway; this
-      # step exists for callers that need the tag before publishing.
-      - name: Create tag
-        id: tag
-        if: ${{ !inputs.dry_run && inputs.create_tag && steps.releasable.outputs.releasable != 'false' }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
-          SHA: ${{ steps.version.outputs.sha }}
-        run: |
-          set -euo pipefail
-
-          create_tag() {
-            gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
-              -f "ref=refs/tags/${VERSION}" \
-              -f "sha=${SHA}" > /dev/null
-          }
-
-          if ! create_tag; then
-            echo "::error::Creating tag ${VERSION} failed. The draft release is intact. If the tag does not exist, re-run to retry; if it does, publish the draft or cut the next patch."
-            exit 1
+            echo "Tag ${VERSION} already points at ${SHA}."
           fi
 
           echo "tag_created=true" >> "$GITHUB_OUTPUT"
@@ -379,44 +558,4 @@ jobs:
       - name: Dry run notice
         if: ${{ inputs.dry_run }}
         run: |
-          echo "Dry run: nothing tagged, created or updated. Re-run with dry_run unchecked to release." >> "$GITHUB_STEP_SUMMARY"
-
-  validate-retry:
-    name: Validate asset retry
-    # The recovery path skips prepare, so nothing else would check the target.
-    # Asset jobs live in the calling repository; gate them on this job's caller
-    # succeeding (needs.<call>.result == 'success'), not on retry being set.
-    if: ${{ inputs.retry_assets_for != '' }}
-    runs-on: ubuntu-26.04
-    permissions:
-      # Draft releases are not visible to a read-only token.
-      contents: write
-    steps:
-      - name: Guard - retry is not a dry run
-        if: ${{ inputs.dry_run }}
-        run: |
-          echo "::error::retry_assets_for rebuilds and re-uploads assets; there is no dry run for it. Uncheck dry_run to retry."
-          exit 1
-
-      - name: Check the draft release exists
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ inputs.retry_assets_for }}
-        run: |
-          set -euo pipefail
-
-          release_state=$(gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" \
-            --json isDraft --jq 'if .isDraft then "draft" else "published" end' 2>/dev/null || echo "missing")
-
-          case "$release_state" in
-            draft)
-              ;;
-            published)
-              echo "::error::${VERSION} is already published and immutable. Cut a new version with the Release workflow."
-              exit 1
-              ;;
-            missing)
-              echo "::error::No release found for ${VERSION}. This workflow only retries a failed upload. Use the Release workflow to cut a release."
-              exit 1
-              ;;
-          esac
+          echo "Dry run: nothing tagged or drafted. Re-run with dry_run unchecked to release." >> "$GITHUB_STEP_SUMMARY"

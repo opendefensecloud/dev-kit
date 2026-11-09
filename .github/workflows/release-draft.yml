@@ -1,0 +1,143 @@
+name: Release draft
+
+# Reusable workflow, step 2 of 2: creates the draft release for a tag that
+# release.yml created in the same run, with the notes it handed over and,
+# optionally, the caller's assets. The draft only appears once it is complete
+# (but see "Known gaps" in the README). Re-running updates the same draft.
+# See "Release workflow" in the README.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'The release tag, from release.yml''s version output.'
+        required: true
+        type: string
+      sha:
+        description: 'The commit the tag must point at, from release.yml''s sha output.'
+        required: true
+        type: string
+      assets_artifact:
+        description: 'Name of a workflow artifact in this run whose files are attached to the release. Empty: no assets.'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  draft:
+    name: Create draft release
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write # create and update the draft release
+    steps:
+      - name: Fetch release notes
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-notes
+          path: release-notes
+
+      - name: Fetch release assets
+        if: ${{ inputs.assets_artifact != '' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.assets_artifact }}
+          path: release-assets
+
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+          SHA: ${{ inputs.sha }}
+          ASSETS_ARTIFACT: ${{ inputs.assets_artifact }}
+        run: |
+          set -euo pipefail
+
+          # The assets were built from SHA; the release must carry a tag at
+          # that commit. Not every repository protects its tags from moving.
+          tagged=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${VERSION}" --jq '.object.sha' 2>/dev/null || true)
+          if [ "$tagged" != "$SHA" ]; then
+            echo "::error::Tag ${VERSION} points at '${tagged:-nothing}', not ${SHA}, the commit this release was built from."
+            exit 1
+          fi
+
+          prerelease=false
+          if [[ "$VERSION" == *-* ]]; then
+            prerelease=true
+          fi
+
+          # Release assets are flat: one name per file.
+          files=()
+          if [ -n "$ASSETS_ARTIFACT" ]; then
+            while IFS= read -r -d '' f; do
+              files+=("$f")
+            done < <(find release-assets -type f -print0 | sort -z)
+            if [ ${#files[@]} -eq 0 ]; then
+              echo "::error::Artifact ${ASSETS_ARTIFACT} holds no files."
+              exit 1
+            fi
+            dupes=$(printf '%s\n' "${files[@]}" | xargs -d '\n' -n1 basename | sort | uniq -d)
+            if [ -n "$dupes" ]; then
+              echo "::error::Artifact ${ASSETS_ARTIFACT} holds several files named: ${dupes//$'\n'/ }. Release assets need unique names."
+              exit 1
+            fi
+          fi
+
+          # Only "not found" means there is no release yet. Any other error
+          # must not be taken for it: creating would then race an existing one.
+          if ! release_state=$(gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" \
+            --json isDraft --jq 'if .isDraft then "draft" else "published" end' 2>view.err); then
+            if grep -q 'release not found' view.err; then
+              release_state=missing
+            else
+              echo "::error::Looking up release ${VERSION} failed: $(cat view.err)"
+              exit 1
+            fi
+          fi
+
+          case "$release_state" in
+            published)
+              echo "::error::Release ${VERSION} is already published and cannot be changed."
+              exit 1
+              ;;
+            missing)
+              echo "Creating draft release ${VERSION} with ${#files[@]} asset(s)."
+              gh release create "$VERSION" \
+                --repo "$GITHUB_REPOSITORY" \
+                --draft \
+                --verify-tag \
+                --title "$VERSION" \
+                --notes-file release-notes/notes.md \
+                --prerelease="$prerelease" \
+                "${files[@]}"
+              ;;
+            draft)
+              # A re-run, or a draft left over from before v5: bring it in line
+              # with this run, including dropping assets this build did not make.
+              echo "Updating draft release ${VERSION} with ${#files[@]} asset(s)."
+              gh release edit "$VERSION" \
+                --repo "$GITHUB_REPOSITORY" \
+                --verify-tag \
+                --title "$VERSION" \
+                --notes-file release-notes/notes.md \
+                --prerelease="$prerelease"
+              if [ ${#files[@]} -gt 0 ]; then
+                gh release upload "$VERSION" --repo "$GITHUB_REPOSITORY" --clobber "${files[@]}"
+              fi
+              wanted=$(for f in "${files[@]}"; do basename "$f"; done)
+              attached=$(gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" \
+                --json assets --jq '.assets[].name')
+              while IFS= read -r name; do
+                [ -n "$name" ] || continue
+                if ! grep -qxF -- "$name" <<< "$wanted"; then
+                  echo "Deleting stale asset ${name}."
+                  gh release delete-asset "$VERSION" "$name" --repo "$GITHUB_REPOSITORY" --yes
+                fi
+              done <<< "$attached"
+              ;;
+          esac
+
+          url=$(gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json url --jq .url)
+          echo "Draft ${VERSION} is complete: ${url}. Review it, then publish." >> "$GITHUB_STEP_SUMMARY"

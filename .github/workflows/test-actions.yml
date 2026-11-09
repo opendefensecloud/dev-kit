@@ -64,6 +64,13 @@ jobs:
         run: .github/actions/check-release-notes/test-check-release-notes.sh
       - name: Test repo-settings.sh
         run: scripts/test-repo-settings.sh
+      # The same git-cliff release.yml installs: the test runs its steps.
+      - name: Install git-cliff
+        uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
+        with:
+          tool: git-cliff@2.13.1
+      - name: Test the release workflow steps
+        run: scripts/test-release-workflow.sh
 
 
   # yq is not on the runner image but is in this repository's dev shell, so

@@ -8,17 +8,12 @@ on:
         required: false
         type: string
       dry_run:
-        description: 'Render the version and notes only. Do not create or update a release, or create a tag.'
+        description: 'Render the version and notes only. Do not tag or draft.'
         required: false
         type: boolean
         default: true
       force:
         description: 'Release even though commits are missing from the notes. Recovery only.'
-        required: false
-        type: boolean
-        default: false
-      create_tag:
-        description: 'Create the release tag now instead of when the draft is published. Leave unchecked to only update the draft.'
         required: false
         type: boolean
         default: false
@@ -29,19 +24,35 @@ permissions:
   contents: read
 
 concurrency:
-  group: release
-  cancel-in-progress: false
+  # Releases queue one at a time and are never cancelled: a run in flight may
+  # already have tagged. Push previews get their own group, so a merge cannot
+  # cancel a release dispatch waiting in the queue.
+  group: ${{ github.event_name == 'workflow_dispatch' && 'release' || 'release-preview' }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
   release:
     uses: ./.github/workflows/release.yml
     permissions:
-      contents: write
+      contents: write # create the tag
+      checks: read # required_checks
     with:
-      # A push keeps the draft up to date; it never tags or publishes. The
-      # `inputs` context is empty on push, so each value is selected by the
-      # event and still has the declared type.
+      # A push only previews the next release in the job summary: it is always
+      # a dry run. The `inputs` context is empty on push, so each value is
+      # selected by the event and still has the declared type.
       version: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '' }}
-      dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+      dry_run: ${{ github.event_name != 'workflow_dispatch' || inputs.dry_run }}
       force: ${{ github.event_name == 'workflow_dispatch' && inputs.force }}
-      create_tag: ${{ github.event_name == 'workflow_dispatch' && inputs.create_tag }}
+      # lint (make fmt + make lint) runs on every push to main, unfiltered.
+      required_checks: '["lint"]'
+      checks_skip_paths: '[]'
+
+  draft:
+    needs: release
+    if: ${{ needs.release.outputs.tag_created == 'true' }}
+    uses: ./.github/workflows/release-draft.yml
+    permissions:
+      contents: write # create the draft release
+    with:
+      version: ${{ needs.release.outputs.version }}
+      sha: ${{ needs.release.outputs.sha }}
