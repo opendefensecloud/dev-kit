@@ -208,14 +208,13 @@ than failing with a missing attribute. On Renovate's Go PR,
 
 ### Keeping the dev-kit pins in step
 
-A consumer pins dev-kit in up to four places, and only the workflow pins are both
-immutable and reviewed:
+A consumer pins dev-kit in up to four places:
 
-| Where                | Pin               | Mutable?                   |
+| Where                | Pin               | Can it change?             |
 | -------------------- | ----------------- | -------------------------- |
 | `.github/workflows/` | `@<sha> # <tag>`  | no                         |
-| `Makefile`           | `DEV_KIT_VERSION` | yes — a tag                |
-| `flake.nix`          | the flake input   | yes — a tag                |
+| `Makefile`           | `DEV_KIT_VERSION` | a release tag: protected   |
+| `flake.nix`          | the flake input   | a release tag: protected   |
 | `flake.lock`         | the resolved rev  | no, but rewritten by `nix` |
 
 `check-dev-kit-pins` asserts they all name the same release. Add it to your `lint`
@@ -234,8 +233,11 @@ skipped: one the comparison cannot read is how drift gets in unseen, and a
 tag-pinned reference is mutable besides. Commented-out references are ignored, so
 the stubs in this README can be pasted as examples.
 
-This detects; it does not prevent. Immutable release tags on this repository would
-make the tag itself trustworthy.
+This detects drift between the pins. On dev-kit, the `protect-release-tags`
+ruleset (below) refuses moving or deleting a `v*` tag, so a pinned release tag
+does not change under you: a fix ships as a new release. The ruleset itself can
+still be changed by an org owner, and a `DEV_KIT_VERSION` of `main` is not a tag
+at all.
 
 ### Seeing what a `flake.lock` bump actually changes
 
@@ -277,21 +279,24 @@ It configures:
 - **Merge strategy** — merge commits only by default, configurable via `REPO_ALLOW_MERGE_COMMIT`, `REPO_ALLOW_SQUASH_MERGE`, `REPO_ALLOW_REBASE_MERGE` (these also restrict the ruleset's allowed merge methods; at least one must be enabled or `repo-settings` fails); auto-merge enabled, delete branch on merge
 - **Secret scanning** — enabled
 - **Branch protection** — a "protect-main" ruleset on the default branch (and any `REPO_RULESET_BRANCHES` patterns): requires PRs with 1 approval, dismisses stale reviews, requires review thread resolution, enforces commit signatures, requires approval of the latest push when `REPO_REQUIRE_LAST_PUSH_APPROVAL` is `true`, prevents direct pushes/deletions/non-fast-forwards
+- **Release tags** — the "protect-release-tags" ruleset refuses moving or deleting, for workflows and repository admins too, tags matching `REPO_RELEASE_TAGS` (`v*` by default). Creating tags stays open, so releases keep tagging. There is deliberately no admin bypass: a botched release is fixed with the next patch, not by retagging.
 
 The repository settings are configurable via make variables (set them in your `Makefile` or pass them on the command line, e.g. `make repo-settings REPO_STATUS_CHECKS='["CI","lint"]' REPO_RULESET_BRANCHES='["release/*"]'`):
 
-| Variable                               | Default | Description                                                                                                                                                                                                                             |
-| -------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `REPO_ALLOW_MERGE_COMMIT`              | `true`  | Allow merge commits in the merge strategy                                                                                                                                                                                               |
-| `REPO_ALLOW_SQUASH_MERGE`              | `false` | Allow squash merging                                                                                                                                                                                                                    |
-| `REPO_ALLOW_REBASE_MERGE`              | `false` | Allow rebase merging                                                                                                                                                                                                                    |
-| `REPO_REQUIRE_LAST_PUSH_APPROVAL`      | `false` | Require the most recent push to be approved before merging                                                                                                                                                                              |
-| `REPO_ADMIN_BYPASS`                    | `true`  | When `false`, org admins cannot bypass the ruleset                                                                                                                                                                                      |
-| `REPO_REQUIRED_APPROVING_REVIEW_COUNT` | `1`     | Number of approving reviews required to merge                                                                                                                                                                                           |
-| `REPO_REQUIRE_CODE_OWNER_REVIEW`       | `false` | Require an approving review from code owners                                                                                                                                                                                            |
-| `REPO_REQUIRE_BRANCH_UP_TO_DATE`       | `false` | Require branches to be up to date before merging (needs at least one `REPO_STATUS_CHECKS` value; `repo-settings` fails otherwise)                                                                                                       |
-| `REPO_STATUS_CHECKS`                   | `[]`    | JSON array of status-check contexts that must pass (e.g. `["CI","action-pins / Check action pins"]`); each job name is used as-is, so contexts with spaces work; the `required_status_checks` rule is only added when this is non-empty |
-| `REPO_RULESET_BRANCHES`                | `[]`    | JSON array of additional branch patterns the ruleset applies to (e.g. `["release/*"]`); short names are normalized to `refs/heads/...`; the default branch is always protected                                                          |
+| Variable                               | Default  | Description                                                                                                                                                                                                                             |
+| -------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `REPO_ALLOW_MERGE_COMMIT`              | `true`   | Allow merge commits in the merge strategy                                                                                                                                                                                               |
+| `REPO_ALLOW_SQUASH_MERGE`              | `false`  | Allow squash merging                                                                                                                                                                                                                    |
+| `REPO_ALLOW_REBASE_MERGE`              | `false`  | Allow rebase merging                                                                                                                                                                                                                    |
+| `REPO_REQUIRE_LAST_PUSH_APPROVAL`      | `false`  | Require the most recent push to be approved before merging                                                                                                                                                                              |
+| `REPO_ADMIN_BYPASS`                    | `true`   | When `false`, org admins cannot bypass the ruleset                                                                                                                                                                                      |
+| `REPO_REQUIRED_APPROVING_REVIEW_COUNT` | `1`      | Number of approving reviews required to merge                                                                                                                                                                                           |
+| `REPO_REQUIRE_CODE_OWNER_REVIEW`       | `false`  | Require an approving review from code owners                                                                                                                                                                                            |
+| `REPO_REQUIRE_BRANCH_UP_TO_DATE`       | `false`  | Require branches to be up to date before merging (needs at least one `REPO_STATUS_CHECKS` value; `repo-settings` fails otherwise)                                                                                                       |
+| `REPO_STATUS_CHECKS`                   | `[]`     | JSON array of status-check contexts that must pass (e.g. `["CI","action-pins / Check action pins"]`); each job name is used as-is, so contexts with spaces work; the `required_status_checks` rule is only added when this is non-empty |
+| `REPO_RULESET_BRANCHES`                | `[]`     | JSON array of additional branch patterns the ruleset applies to (e.g. `["release/*"]`); short names are normalized to `refs/heads/...`; the default branch is always protected                                                          |
+| `REPO_RELEASE_TAGS`                    | `["v*"]` | JSON array of tag patterns nobody may move or delete; short names are normalized to `refs/tags/...`; `[]` skips the ruleset                                                                                                             |
+| `REPO_RELEASE_TAGS_ENFORCEMENT`        | `active` | Enforcement of that ruleset: `active`, `evaluate` (report only) or `disabled`                                                                                                                                                           |
 
 ### GitHub Actions
 
