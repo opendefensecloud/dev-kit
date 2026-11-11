@@ -69,6 +69,9 @@ SETUP_ENVTEST ?= $(LOCALGOBIN)/setup-envtest
 # REPO_ALLOW_MERGE_COMMIT/SQUASH_MERGE/REBASE_MERGE configure the merge strategy and
 # the ruleset's allowed merge methods; at least one must be `true` (repo-settings fails otherwise).
 # REPO_REQUIRE_LAST_PUSH_APPROVAL requires the most recent push to be approved before merging.
+# REPO_RELEASE_TAGS is a JSON array of tag patterns (default '["v*"]'; short names are normalized
+# to refs/tags/...) that nobody, workflows and admins included, may move or delete; '[]' skips
+# that ruleset. REPO_RELEASE_TAGS_ENFORCEMENT is active, evaluate (report only) or disabled.
 # Booleans must be `true` or `false`. Example:
 #   make repo-settings REPO_ADMIN_BYPASS=false REPO_STATUS_CHECKS='["CI","action-pins / Check action pins"]' REPO_RULESET_BRANCHES='["release/*"]'
 REPO_ADMIN_BYPASS ?= true
@@ -81,9 +84,11 @@ REPO_ALLOW_MERGE_COMMIT ?= true
 REPO_ALLOW_SQUASH_MERGE ?= false
 REPO_ALLOW_REBASE_MERGE ?= false
 REPO_REQUIRE_LAST_PUSH_APPROVAL ?= false
+REPO_RELEASE_TAGS ?= ["v*"]
+REPO_RELEASE_TAGS_ENFORCEMENT ?= active
 
 .PHONY: repo-settings
-repo-settings: ## Reconcile GitHub repository settings (labels, merge strategy, branch protection, security)
+repo-settings: ## Reconcile GitHub repository settings (labels, merge strategy, branch and tag protection, security)
 	@curl --fail -sSL \
 		"https://raw.githubusercontent.com/opendefensecloud/dev-kit/$(DEV_KIT_VERSION)/scripts/repo-settings.sh" | \
 		REPO_ADMIN_BYPASS='$(REPO_ADMIN_BYPASS)' \
@@ -94,6 +99,8 @@ repo-settings: ## Reconcile GitHub repository settings (labels, merge strategy, 
 		REPO_REQUIRE_CODE_OWNER_REVIEW='$(REPO_REQUIRE_CODE_OWNER_REVIEW)' \
 		REPO_REQUIRED_APPROVING_REVIEW_COUNT='$(REPO_REQUIRED_APPROVING_REVIEW_COUNT)' \
 		REPO_REQUIRE_LAST_PUSH_APPROVAL='$(REPO_REQUIRE_LAST_PUSH_APPROVAL)' \
+		REPO_RELEASE_TAGS='$(REPO_RELEASE_TAGS)' \
+		REPO_RELEASE_TAGS_ENFORCEMENT='$(REPO_RELEASE_TAGS_ENFORCEMENT)' \
 		REPO_RULESET_BRANCHES='$(REPO_RULESET_BRANCHES)' \
 		REPO_STATUS_CHECKS='$(REPO_STATUS_CHECKS)' \
 		GH='$(GH)' JQ='$(JQ)' \

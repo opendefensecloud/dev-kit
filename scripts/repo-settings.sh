@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Reconcile a repository's GitHub settings: labels, merge strategy, secret
-# scanning and branch protection ruleset.
+# scanning, branch protection ruleset and release tag ruleset.
 #
 # All configuration is passed through environment variables. Defaults are the
 # single source of truth in common.mk and are always passed by the make target;
@@ -18,6 +18,8 @@ set -euo pipefail
 #   REPO_ALLOW_SQUASH_MERGE                allow squash merging
 #   REPO_ALLOW_REBASE_MERGE                allow rebase merging
 #   REPO_REQUIRE_LAST_PUSH_APPROVAL        require the most recent push to be approved before merging
+#   REPO_RELEASE_TAGS                      JSON array of tag patterns nobody may move or delete; [] skips
+#   REPO_RELEASE_TAGS_ENFORCEMENT          that ruleset's enforcement: active, evaluate or disabled
 #   GH, JQ                                 commands used to talk to GitHub and build JSON
 
 "$GH" auth status > /dev/null 2>&1 || {
@@ -36,6 +38,17 @@ REPO_RULESET_BRANCHES_EFFECTIVE=$(echo "$REPO_RULESET_BRANCHES" | "$JQ" -c '[.[]
   if startswith("~") or startswith("refs/") then .
   else "refs/heads/" + . end] |
   ["~DEFAULT_BRANCH"] + . | unique')
+REPO_RELEASE_TAGS_EFFECTIVE=$(echo "$REPO_RELEASE_TAGS" | "$JQ" -c '[.[] |
+  select((type == "string") and (length > 0)) |
+  if startswith("refs/") then . else "refs/tags/" + . end] | unique')
+
+case "$REPO_RELEASE_TAGS_ENFORCEMENT" in
+  active | evaluate | disabled) ;;
+  *)
+    echo "error: REPO_RELEASE_TAGS_ENFORCEMENT must be active, evaluate or disabled, got '$REPO_RELEASE_TAGS_ENFORCEMENT'" >&2
+    exit 1
+    ;;
+esac
 
 if [ "$REPO_REQUIRE_BRANCH_UP_TO_DATE" = "true" ] &&
   [ "$REPO_STATUS_CHECKS_EFFECTIVE" = "[]" ]; then
@@ -142,13 +155,55 @@ echo "    branch up-to-date: $REPO_REQUIRE_BRANCH_UP_TO_DATE"
 echo "    required status checks: $REPO_STATUS_CHECKS_EFFECTIVE"
 echo "    admin bypass: $REPO_ADMIN_BYPASS"
 
-existing=$("$GH" api "repos/$REPO/rulesets" -q '.[] | select(.name=="protect-main") | .id' 2> /dev/null || true)
-if [ -n "$existing" ]; then
-  "$GH" api "repos/$REPO/rulesets/$existing" -X PUT --input <(echo "$RULESET_JSON") > /dev/null
-  echo "    Updated existing ruleset (id: $existing)"
+# upsert_ruleset <json>: creates or updates the repository ruleset named in
+# <json>. includes_parents=false keeps an organization ruleset of the same name
+# out of the lookup; it cannot be updated through the repository endpoint. A
+# failed lookup stops the run: read as "no ruleset", it would POST a duplicate.
+upsert_ruleset() {
+  local json=$1 name existing out
+  name=$(echo "$json" | "$JQ" -r .name)
+  existing=$("$GH" api --paginate "repos/$REPO/rulesets?includes_parents=false&per_page=100" \
+    -q ".[] | select(.name==\"$name\") | .id") || {
+    echo "error: looking up ruleset $name failed" >&2
+    return 1
+  }
+  # gh prints GitHub's reason for a rejection (the "errors" list) on stdout.
+  if [ -n "$existing" ]; then
+    out=$("$GH" api "repos/$REPO/rulesets/$existing" -X PUT --input <(echo "$json")) ||
+      {
+        echo "error: updating ruleset $name failed: $out" >&2
+        return 1
+      }
+    echo "    Updated existing ruleset $name (id: $existing)"
+  else
+    out=$("$GH" api "repos/$REPO/rulesets" -X POST --input <(echo "$json")) ||
+      {
+        echo "error: creating ruleset $name failed: $out" >&2
+        return 1
+      }
+    echo "    Created new ruleset $name"
+  fi
+}
+
+upsert_ruleset "$RULESET_JSON"
+
+# protect-release-tags: nobody, workflows and admins included, moves or deletes
+# a release tag. Creation stays open: GitHub refuses GitHub Actions as a bypass
+# actor, so a ruleset cannot reserve tag creation for the release workflow.
+if [ "$REPO_RELEASE_TAGS_EFFECTIVE" = "[]" ]; then
+  echo "  Release tag ruleset skipped (REPO_RELEASE_TAGS is empty)"
 else
-  "$GH" api "repos/$REPO/rulesets" -X POST --input <(echo "$RULESET_JSON") > /dev/null
-  echo "    Created new ruleset"
+  echo "  Configuring release tag ruleset..."
+  echo "    tags: $REPO_RELEASE_TAGS_EFFECTIVE"
+  echo "    enforcement: $REPO_RELEASE_TAGS_ENFORCEMENT"
+  # shellcheck disable=SC2016 # $variables belong to jq, not the shell
+  upsert_ruleset "$("$JQ" -cn \
+    --argjson tags "$REPO_RELEASE_TAGS_EFFECTIVE" \
+    --arg enforcement "$REPO_RELEASE_TAGS_ENFORCEMENT" \
+    '{ name: "protect-release-tags", target: "tag", enforcement: $enforcement,
+       conditions: { ref_name: { include: $tags, exclude: [] } },
+       rules: [ { type: "update" }, { type: "deletion" } ],
+       bypass_actors: [] }')"
 fi
 
 echo "  Configuring merge commit settings..."
