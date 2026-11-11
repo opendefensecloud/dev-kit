@@ -657,6 +657,16 @@ for name in "My App.zip" ".hidden" "tool." "tool@1"; do
   report 0 "$(calls 'release create')" "before any draft exists"
 done
 
+# Against an existing draft: a name with a newline splits into two valid
+# lines ("My", "App.zip") unless each name is checked whole.
+fresh
+release v1.2.0 true tool
+assets $'My\nApp.zip'
+report fail "$(draft v1.2.0 release-assets)" "a file name with a newline fails on a re-run"
+report 1 "$(grep -c "would rename: \$'My\\\\nApp.zip'" "$STATE/log")" "naming it quoted"
+report 0 "$(calls 'release \(edit\|upload\|delete-asset\)')" "and the draft is left untouched"
+report "tool" "$(attached v1.2.0)" "with its assets"
+
 fresh
 release v1.2.0 true tool_v1.2.0-linux.tar.gz
 assets tool_v1.2.0-linux.tar.gz

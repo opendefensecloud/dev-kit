@@ -78,17 +78,24 @@ jobs:
               echo "::error::Artifact ${ASSETS_ARTIFACT} holds no files."
               exit 1
             fi
-            dupes=$(printf '%s\n' "${files[@]}" | xargs -d '\n' -n1 basename | sort | uniq -d)
-            if [ -n "$dupes" ]; then
-              echo "::error::Artifact ${ASSETS_ARTIFACT} holds several files named: ${dupes//$'\n'/ }. Release assets need unique names."
-              exit 1
-            fi
             # GitHub renames other names on upload ("My App.zip" becomes
             # "My.App.zip"); a re-run would then delete the upload as stale.
-            renamed=$(printf '%s\n' "${files[@]}" | xargs -d '\n' -n1 basename \
-              | grep -vE '^[A-Za-z0-9_-]([A-Za-z0-9._-]*[A-Za-z0-9_-])?$' || true)
-            if [ -n "$renamed" ]; then
-              echo "::error::Artifact ${ASSETS_ARTIFACT} holds files GitHub would rename: ${renamed//$'\n'/ }. Use letters, digits, '.', '_' and '-', not starting or ending with '.'."
+            # Each whole name is checked, so one with a newline cannot pass as
+            # two valid lines.
+            renamed=()
+            for f in "${files[@]}"; do
+              if [[ ! "${f##*/}" =~ ^[A-Za-z0-9_-]([A-Za-z0-9._-]*[A-Za-z0-9_-])?$ ]]; then
+                renamed+=("$(printf '%q' "${f##*/}")")
+              fi
+            done
+            if [ ${#renamed[@]} -gt 0 ]; then
+              echo "::error::Artifact ${ASSETS_ARTIFACT} holds files GitHub would rename: ${renamed[*]}. Use letters, digits, '.', '_' and '-', not starting or ending with '.'."
+              exit 1
+            fi
+            # Every name is a single line now.
+            dupes=$(for f in "${files[@]}"; do echo "${f##*/}"; done | sort | uniq -d)
+            if [ -n "$dupes" ]; then
+              echo "::error::Artifact ${ASSETS_ARTIFACT} holds several files named: ${dupes//$'\n'/ }. Release assets need unique names."
               exit 1
             fi
           fi
