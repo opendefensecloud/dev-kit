@@ -652,7 +652,7 @@ See [`.github/workflows/release-self.yml`](.github/workflows/release-self.yml) f
 
 `required_checks` names the check runs, as shown on the commit, that must have passed before a commit is tagged. A check that failed, is still running, was skipped or never ran blocks the release; a dry run only reports it. Typically these are the e2e jobs that run on every push to the default branch.
 
-Those jobs usually skip documentation-only pushes (`paths-ignore`). Set `checks_skip_paths` to the same globs (default `["docs/**", "**/*.md"]`; `*` and `**` both cross directories). A commit without the checks is then released on those of the nearest earlier commit that ran them, but only if every change since that commit matches `checks_skip_paths`. A code commit whose checks have not started yet therefore fails the run instead of being released on an older result. Use `'[]'` when the checks run on every push.
+Those jobs usually skip documentation-only pushes (`paths-ignore`). Set `checks_skip_paths` to the same globs (default `["docs/**", "**/*.md"]`). They match as in GitHub's path filters: `*` stops at a `/`, `**` crosses it, and a leading `**/` also matches at the top level; `?`, `+`, `[]` and `!` are refused. A commit without the checks is then released on those of the nearest earlier commit that ran them, but only if every change since that commit matches `checks_skip_paths`. A code commit whose checks have not started yet therefore fails the run instead of being released on an older result. Use `'[]'` when the checks run on every push.
 
 #### Attaching release assets
 
@@ -692,7 +692,7 @@ Add a build job between the two calls. It checks out the tagged commit, builds, 
       assets_artifact: release-assets
 ```
 
-Every file in the artifact becomes one release asset, so file names must be unique across subdirectories. `release-notes` is the artifact name `release.yml` hands the notes over in; don't use it for your own. Pin both workflows to the same dev-kit commit: they share that hand-off.
+Every file in the artifact becomes one release asset, so file names must be unique across subdirectories and use only letters, digits, `.`, `_` and `-`, not starting or ending with `.`; GitHub would rename others. `release-notes` is the artifact name `release.yml` hands the notes over in; don't use it for your own. Pin both workflows to the same dev-kit commit: they share that hand-off.
 
 #### Requirements
 
@@ -704,14 +704,14 @@ Every file in the artifact becomes one release asset, so file names must be uniq
 - **Prior release tag**: The repository must already have a release tag. git-cliff derives the changelog boundary from the previous tag, and the workflow fails if there is none. Passing an explicit `version` does not bypass this.
 - **Nothing releasable**: If no `feat`, `fix`, `perf` or breaking change landed since the previous tag, a push or scheduled run succeeds with a notice. A manual run fails unless `version` is supplied.
 - **One release at a time**: A manual run fails while any draft release exists; a dry run warns. A draft whose tag exists is a release that was cut but not published: publish it, or delete the draft (its tag becomes a burned tag, below).
-- **Protected release tags**: No tag is created unless an active tag ruleset refuses moving and deleting it (`make repo-settings` adds `protect-release-tags`); a dry run warns. The draft is checked against its tag once, when it is created; only a tag that cannot move keeps assets and tag matching until someone publishes. `release-draft.yml` also refuses to draft a tag that does not point at the commit the assets were built from.
+- **Protected release tags**: No tag is created unless an active tag ruleset without bypass actors refuses moving and deleting it (`make repo-settings` adds `protect-release-tags`); a dry run warns. GitHub shows a ruleset's bypass actors only to its admins, so the check sees them only where it can, and otherwise checks that the workflow itself cannot bypass it. The draft is checked against its tag once, when it is created; only a tag that cannot move keeps assets and tag matching until someone publishes. `release-draft.yml` also refuses to draft a tag that does not point at the commit the assets were built from.
 - **Burned tags**: The tag is created before anything is built, so a run can leave a tag that is never released: the wrong commit was dispatched, the build cannot pass on that commit, or a failed run was not re-run in time. Such a tag stays (it cannot be deleted) but nothing was shipped from it. Delete its draft, if any, and run the release again: tags without a release are ignored as release boundaries, so the next release's notes, notes check and version bump start at the last released tag, the computed version skips taken numbers, and the notes name the burned version. Never reuse a burned number with an explicit `version`; it is refused anyway.
-- **Recovery**: If the asset build or the draft job fails, use **Re-run failed jobs**: the tag already exists, so the rebuild uses the same commit; the draft job creates or updates the same draft, and drops assets the rebuild did not produce. **Re-run all jobs** cannot recover a release, since the version computation then finds its own tag, and runs older than 30 days cannot be re-run at all. Either way the tag is burned: delete the draft and release again.
+- **Recovery**: If the asset build or the draft job fails, use **Re-run failed jobs**: the tag already exists, so the rebuild uses the same commit; the draft job creates or updates the same draft, and drops assets the rebuild did not produce. A re-run that a later release run has overtaken (it found this tag without a release and cut the next version) is refused, as is drafting while another draft is pending. **Re-run all jobs** cannot recover a release, since the version computation then finds its own tag, and runs older than 30 days cannot be re-run at all. Either way the tag is burned: delete the draft and release again.
 - **Publishing**: Prerelease versions (containing `-`) are marked as prereleases automatically. Publishing triggers downstream workflows (Docker, Helm, docs), which build from the tag.
 
 #### Known gaps
 
-- `gh release create` creates the draft before uploading its files, so the draft is briefly visible without all assets. Publish only after the run has finished: a published release is immutable and the remaining uploads would fail.
+- `gh release create` creates the draft before uploading its files, so the draft is briefly visible without all assets. Publish only after the run has finished. If the release is immutable, remaining uploads fail; otherwise, assets can still change after publication.
 
 #### Upgrading from v4
 

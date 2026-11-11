@@ -83,6 +83,14 @@ jobs:
               echo "::error::Artifact ${ASSETS_ARTIFACT} holds several files named: ${dupes//$'\n'/ }. Release assets need unique names."
               exit 1
             fi
+            # GitHub renames other names on upload ("My App.zip" becomes
+            # "My.App.zip"); a re-run would then delete the upload as stale.
+            renamed=$(printf '%s\n' "${files[@]}" | xargs -d '\n' -n1 basename \
+              | grep -vE '^[A-Za-z0-9_-]([A-Za-z0-9._-]*[A-Za-z0-9_-])?$' || true)
+            if [ -n "$renamed" ]; then
+              echo "::error::Artifact ${ASSETS_ARTIFACT} holds files GitHub would rename: ${renamed//$'\n'/ }. Use letters, digits, '.', '_' and '-', not starting or ending with '.'."
+              exit 1
+            fi
           fi
 
           # Only "not found" means there is no release yet. Any other error
@@ -103,6 +111,33 @@ jobs:
               exit 1
               ;;
             missing)
+              # A failed run can be re-run after a later run took over: that
+              # run treated this tag as never released and cut the next
+              # version. Drafting this one now would ship it after all.
+              others=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 \
+                --json tagName,isDraft --jq '.[] | select(.isDraft) | .tagName')
+              if [ -n "$others" ]; then
+                echo "::error::Draft release ${others//$'\n'/ } is pending. Publish or delete it before drafting ${VERSION}."
+                exit 1
+              fi
+              # sort -V ranks v1.2.0-rc1 above v1.2.0; a ~ sorts below anything.
+              semver_key() { sed -E 's/^(v[0-9]+\.[0-9]+\.[0-9]+)-/\1~/'; }
+              # Captured first: a failed lookup must stop the run, not read as
+              # "no newer tags".
+              tags=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v" \
+                --jq '.[].ref | ltrimstr("refs/tags/")')
+              newer=()
+              while IFS= read -r t; do
+                [[ "$t" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]] && [ "$t" != "$VERSION" ] || continue
+                top=$(printf '%s\n%s\n' "$VERSION" "$t" | semver_key | sort -V | tail -1)
+                if [ "$top" = "$(semver_key <<< "$t")" ]; then
+                  newer+=("$t")
+                fi
+              done <<< "$tags"
+              if [ ${#newer[@]} -gt 0 ]; then
+                echo "::error::${VERSION} was superseded: ${newer[*]} was tagged after it, by a run that took ${VERSION} as never released. Not drafting it."
+                exit 1
+              fi
               echo "Creating draft release ${VERSION} with ${#files[@]} asset(s)."
               gh release create "$VERSION" \
                 --repo "$GITHUB_REPOSITORY" \

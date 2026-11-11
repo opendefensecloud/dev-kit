@@ -103,6 +103,11 @@ case "$1 $2" in
         sha=$(sed -E 's|.*/commits/([0-9a-f]+)/check-runs.*|\1|' <<< "$3")
         { cat "$STATE/checks/$sha.json" 2> /dev/null || echo '{"check_runs": []}'; } | jq -r "$q"
         ;;
+      repos/org/repo/git/matching-refs/tags/v)
+        # The tags in $STATE/refs, as GitHub lists matching refs.
+        shopt -s nullglob
+        for f in "$STATE"/refs/v*; do jq -n --arg r "refs/tags/${f##*/}" '{ref: $r}'; done | jq -s . | jq -r "$q"
+        ;;
       "repos/org/repo/rulesets?includes_parents=true&per_page=100")
         # $STATE/rulesets/<id>.json, listed as GitHub lists them.
         shopt -s nullglob
@@ -324,6 +329,16 @@ checks "$C_CODE" "e2e / api:completed/success" "e2e / ui:completed/success"
 report pass "$(gate "$C_DOCS")" "a docs/ commit is released on the checks of the commit before"
 report 1 "$(grep -c "using that commit's checks" "$STATE/log")" "and says so"
 report pass "$(gate "$C_README")" "so is a top-level *.md change (**/ matches the top level)"
+report pass "$(gate "$C_DOCS" SKIP_PATHS='["docs/*"]')" "docs/* matches a file directly in docs/"
+report fail "$(gate "$C_DOCS" SKIP_PATHS='["*.md"]')" "*.md does not match docs/guide.md: * stops at a / as in paths-ignore"
+report fail "$(gate "$C_DOCS" SKIP_PATHS='["*"]')" "nor does *"
+report pass "$(gate "$C_README" SKIP_PATHS='["*.md", "docs/*"]')" "*.md matches a top-level README.md"
+report fail "$(gate "$C_README" SKIP_PATHS='["*.md"]')" "but not the docs/guide.md before it, which the gate also covers"
+report pass "$(gate "$C_DOCS" SKIP_PATHS='["**/guide.md"]')" "**/ crosses directories"
+report pass "$(gate "$C_DOCS" SKIP_PATHS='["docs/guide.md"]')" "a literal path, its . taken literally"
+report fail "$(gate "$C_DOCS" SKIP_PATHS='["docs/guide-md"]')" "a literal path does not match another"
+report fail "$(gate "$C_DOCS" SKIP_PATHS='["docs/guide.m?"]')" "an unsupported wildcard fails"
+report 1 "$(grep -c 'supports only \* and \*\* wildcards, got: docs/guide.m?' "$STATE/log")" "naming the pattern"
 
 fresh
 checks "$C_CODE" "e2e / api:completed/success" "e2e / ui:completed/success"
@@ -430,6 +445,27 @@ fresh
 report fail "$(exec_step "$BREPO" "$VERSION_STEP" INPUT_VERSION='v1.2.0;x' COMPUTED_VERSION=)" \
   "a version that is not a valid tag fails"
 
+# Burned prereleases, in a repository of their own.
+PREPO="$TESTDIR/pre"
+git -C "$TESTDIR" init -q -b main pre
+git -C "$PREPO" -c user.email=t@example.com -c user.name=T commit -q --allow-empty -m "chore: init"
+for t in v2.0.0-rc1 v2.0.0-rc2 v2.0.0-alpha.9 v2.0.0-beta; do git -C "$PREPO" tag "$t"; done
+
+fresh
+report pass "$(exec_step "$PREPO" "$VERSION_STEP" INPUT_VERSION= COMPUTED_VERSION=v2.0.0-rc1)" \
+  "a computed prerelease taken by burned tags"
+report v2.0.0-rc3 "$(out version)" "moves on to the next free number at its end"
+
+fresh
+report pass "$(exec_step "$PREPO" "$VERSION_STEP" INPUT_VERSION= COMPUTED_VERSION=v2.0.0-alpha.9)" \
+  "a dotted prerelease number"
+report v2.0.0-alpha.10 "$(out version)" "is counted on numerically"
+
+fresh
+report fail "$(exec_step "$PREPO" "$VERSION_STEP" INPUT_VERSION= COMPUTED_VERSION=v2.0.0-beta)" \
+  "a taken prerelease without a number at its end fails"
+report 1 "$(grep -c 'Pass an explicit version' "$STATE/log")" "and asks for an explicit version"
+
 fresh
 report pass "$(exec_step "$BREPO" "$NOTES" VERSION=v1.1.1 SHA="$SHA" CLIFF_CONFIG="$ROOT/cliff.toml" \
   PREVIOUS_TAG=v1.0.0 IGNORE_TAGS='^(v1\.1\.0)$' BURNED=v1.1.0)" "notes are rendered"
@@ -485,6 +521,32 @@ report fail "$(protect)" "a ruleset for other tags does not protect it"
 fresh
 ruleset 9 branch active '["~ALL"]' '[]' '["update","deletion"]'
 report fail "$(protect)" "a branch ruleset does not protect tags"
+
+# bypass <id> <jq update>: amends a stored ruleset.
+bypass() { jq "$2" "$STATE/rulesets/$1.json" > "$STATE/rs.tmp" && mv "$STATE/rs.tmp" "$STATE/rulesets/$1.json"; }
+
+fresh
+ruleset 8 tag active '["refs/tags/v*"]' '[]' '["update","deletion"]'
+bypass 8 '.bypass_actors = [{actor_type: "RepositoryRole", actor_id: 5, bypass_mode: "always"}]'
+report fail "$(protect)" "a ruleset with bypass actors does not protect"
+report 1 "$(grep -c 'rs8 has bypass actors' "$STATE/log")" "and says why"
+
+fresh
+ruleset 8 tag active '["refs/tags/v*"]' '[]' '["update","deletion"]'
+bypass 8 '.current_user_can_bypass = "always"'
+report fail "$(protect)" "a ruleset this workflow can bypass does not protect"
+
+fresh
+ruleset 8 tag active '["refs/tags/v*"]' '[]' '["update","deletion"]'
+bypass 8 '.bypass_actors = [] | .current_user_can_bypass = "never"'
+report pass "$(protect)" "an empty bypass list that the workflow cannot bypass protects"
+
+fresh
+ruleset 7 tag active '["refs/tags/v*"]' '[]' '["update","deletion"]'
+bypass 7 '.current_user_can_bypass = "always"'
+ruleset 8 tag active '["refs/tags/v*"]' '[]' '["update","deletion"]'
+report pass "$(protect)" "another ruleset without bypass still protects"
+report 1 "$(grep -c 'protected by ruleset rs8' "$STATE/log")" "and is the one named"
 
 # --- release.yml: what a dry run does ----------------------------------------
 
@@ -587,5 +649,40 @@ assets linux/tool darwin/tool
 report fail "$(draft v1.2.0 release-assets)" "two files with the same name fail"
 report 1 "$(grep -c 'several files named: tool' "$STATE/log")" "naming the clash"
 report 0 "$(calls 'release create')" "before any draft exists"
+
+for name in "My App.zip" ".hidden" "tool." "tool@1"; do
+  fresh
+  assets "$name"
+  report fail "$(draft v1.2.0 release-assets)" "a file GitHub would rename fails: '$name'"
+  report 0 "$(calls 'release create')" "before any draft exists"
+done
+
+fresh
+release v1.2.0 true tool_v1.2.0-linux.tar.gz
+assets tool_v1.2.0-linux.tar.gz
+report pass "$(draft v1.2.0 release-assets)" "a name of letters, digits, . _ and - is kept"
+report "tool_v1.2.0-linux.tar.gz" "$(attached v1.2.0)" "and not deleted as stale on a re-run"
+
+# Overtaken: run A tagged v1.2.0 and failed; run B then cut v1.2.1. A re-run
+# of A's failed jobs reaches the draft job with v1.2.0.
+fresh
+echo "$SHA" > "$STATE/refs/v1.2.1"
+report fail "$(draft v1.2.0 '')" "a re-run overtaken by a newer tag is not drafted"
+report 1 "$(grep -c 'v1.2.0 was superseded: v1.2.1' "$STATE/log")" "naming the newer tag"
+report 0 "$(calls 'release create')" "and no draft is created"
+
+fresh
+release v1.2.1 true
+report fail "$(draft v1.2.0 '')" "a pending draft blocks drafting another"
+report 0 "$(calls 'release create')" "and no draft is created"
+
+fresh
+echo "$SHA" > "$STATE/refs/v1.2.0-rc1"
+echo "$SHA" > "$STATE/refs/v1.1.9"
+report pass "$(draft v1.2.0 '')" "older tags and own prereleases do not count as newer"
+
+fresh
+echo "$SHA" > "$STATE/refs/v1.2.0"
+report fail "$(draft v1.2.0-rc1 '')" "a prerelease is overtaken by its final version"
 
 exit "$fail"

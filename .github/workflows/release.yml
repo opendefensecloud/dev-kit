@@ -300,13 +300,22 @@ jobs:
           fi
 
           # A computed version can land on a burned tag: its number is taken
-          # for good, so use the next free patch. An explicit version is used
-          # as given or not at all.
+          # for good, so use the next free one: the next patch, or for a
+          # prerelease the next number at its end (rc1 -> rc2, alpha.2 ->
+          # alpha.3). An explicit version is used as given or not at all.
           if [ -z "$INPUT_VERSION" ]; then
             while git rev-parse -q --verify "refs/tags/${version}" >/dev/null; do
               taken=$version
-              IFS=. read -r major minor patch <<< "${version#v}"
-              version="v${major}.${minor}.$((patch + 1))"
+              if [[ "$version" == *-* ]]; then
+                if [[ ! "${version#*-}" =~ ^(.*[^0-9])?([0-9]+)$ ]]; then
+                  echo "::error::${taken} is taken by a tag that was never released, and its prerelease part does not end in a number. Pass an explicit version."
+                  exit 1
+                fi
+                version="${version%%-*}-${BASH_REMATCH[1]}$((10#${BASH_REMATCH[2]} + 1))"
+              else
+                IFS=. read -r major minor patch <<< "${version#v}"
+                version="v${major}.${minor}.$((patch + 1))"
+              fi
               echo "::notice::${taken} is taken by a tag that was never released; using ${version}."
             done
           fi
@@ -348,6 +357,36 @@ jobs:
 
           mapfile -t required < <(jq -r '.[]' <<< "$REQUIRED_CHECKS")
           mapfile -t skip < <(jq -r '.[]' <<< "$SKIP_PATHS")
+
+          # checks_skip_paths must match what the checks' paths-ignore
+          # matches, or an unchecked commit is released on older checks. As in
+          # GitHub's path filters, * stops at a /, ** crosses it and a **/
+          # also matches at the top level. The rest of GitHub's syntax (? + []
+          # !) is refused rather than approximated.
+          skip_re=()
+          for p in "${skip[@]}"; do
+            if [[ "$p" == *[?+\[\]\!]* ]]; then
+              echo "::error::checks_skip_paths supports only * and ** wildcards, got: ${p}"
+              exit 1
+            fi
+            re="" g=$p
+            while [ -n "$g" ]; do
+              case "$g" in
+                '**/'*) re+='(.*/)?' g=${g#'**/'} ;;
+                '**'*) re+='.*' g=${g#'**'} ;;
+                '*'*) re+='[^/]*' g=${g#'*'} ;;
+                *)
+                  c=${g:0:1} g=${g:1}
+                  case "$c" in
+                    . | '^' | '$' | '(' | ')' | '|' | '{' | '}' | "\\") re+="\\${c}" ;;
+                    *) re+=$c ;;
+                  esac
+                  ;;
+              esac
+            done
+            skip_re+=("^${re}\$")
+          done
+
           if [ ${#required[@]} -eq 0 ]; then
             echo "No required_checks configured."
             exit 0
@@ -372,13 +411,10 @@ jobs:
               --jq '.check_runs[] | [.name, .status, (.conclusion // "")] | @tsv'
           }
 
-          # GitHub-style globs: * and ** both cross directories, and a leading
-          # **/ also matches at the top level.
           skippable() {
-            local p
-            for p in "${skip[@]}"; do
-              # shellcheck disable=SC2053 # $p is a glob on purpose
-              if [[ $1 == $p ]] || { [[ $p == '**/'* ]] && [[ $1 == ${p#'**/'} ]]; }; then
+            local re
+            for re in "${skip_re[@]}"; do
+              if [[ $1 =~ $re ]]; then
                 return 0
               fi
             done
@@ -495,6 +531,19 @@ jobs:
             --jq '.[] | select(.target == "tag" and .enforcement == "active") | .id'); do
             ruleset=$(gh api "repos/${GITHUB_REPOSITORY}/rulesets/${id}?includes_parents=true")
             rules=$(jq -c '[.rules[].type]' <<< "$ruleset")
+            # A ruleset with bypass actors lets them move the tag. GitHub shows
+            # bypass_actors only to ruleset admins, which this token is not, so
+            # an absent list proves nothing; current_user_can_bypass at least
+            # says whether this workflow could. The rest rests on the ruleset's
+            # admins, who can edit it anyway.
+            if jq -e '(.bypass_actors // []) | length > 0' <<< "$ruleset" > /dev/null; then
+              echo "::notice::Ruleset $(jq -r .name <<< "$ruleset") has bypass actors; not counted as protection."
+              continue
+            fi
+            if jq -e '(.current_user_can_bypass // "never") != "never"' <<< "$ruleset" > /dev/null; then
+              echo "::notice::This workflow can bypass ruleset $(jq -r .name <<< "$ruleset"); not counted as protection."
+              continue
+            fi
             if jq -e 'index("update") and index("deletion")' <<< "$rules" > /dev/null &&
               matches "$(jq -c '.conditions.ref_name.include // []' <<< "$ruleset")" &&
               ! matches "$(jq -c '.conditions.ref_name.exclude // []' <<< "$ruleset")"; then
