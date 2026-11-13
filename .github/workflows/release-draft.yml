@@ -127,6 +127,11 @@ jobs:
                 echo "::error::Draft release ${others//$'\n'/ } is pending. Publish or delete it before drafting ${VERSION}."
                 exit 1
               fi
+              # Tagged after this one, by commit rather than by version: releases
+              # are cut from the default branch, so a later run tags this
+              # commit or a later one. A lower version can supersede a mistaken
+              # higher one, and a higher burned tag can be older. On the same
+              # commit only the version order is left.
               # sort -V ranks v1.2.0-rc1 above v1.2.0; a ~ sorts below anything.
               semver_key() { sed -E 's/^(v[0-9]+\.[0-9]+\.[0-9]+)-/\1~/'; }
               # Captured first: a failed lookup must stop the run, not read as
@@ -136,10 +141,21 @@ jobs:
               newer=()
               while IFS= read -r t; do
                 [[ "$t" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]] && [ "$t" != "$VERSION" ] || continue
-                top=$(printf '%s\n%s\n' "$VERSION" "$t" | semver_key | sort -V | tail -1)
-                if [ "$top" = "$(semver_key <<< "$t")" ]; then
-                  newer+=("$t")
-                fi
+                status=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${SHA}...refs/tags/${t}" --jq '.status')
+                case "$status" in
+                  ahead) newer+=("$t") ;;
+                  identical)
+                    top=$(printf '%s\n%s\n' "$VERSION" "$t" | semver_key | sort -V | tail -1)
+                    if [ "$top" = "$(semver_key <<< "$t")" ]; then
+                      newer+=("$t")
+                    fi
+                    ;;
+                  behind | diverged) ;;
+                  *)
+                    echo "::error::Comparing ${VERSION} with ${t} returned '${status}'."
+                    exit 1
+                    ;;
+                esac
               done <<< "$tags"
               if [ ${#newer[@]} -gt 0 ]; then
                 echo "::error::${VERSION} was superseded: ${newer[*]} was tagged after it, by a run that took ${VERSION} as never released. Not drafting it."

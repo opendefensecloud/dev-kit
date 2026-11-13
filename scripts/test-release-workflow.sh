@@ -15,6 +15,7 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 
 SHA=1111111111111111111111111111111111111111
 OTHER=2222222222222222222222222222222222222222
+OLDER=3333333333333333333333333333333333333333
 
 # step <workflow> <job> <name>: prints the run script of that step.
 step() {
@@ -89,6 +90,19 @@ case "$1 $2" in
     ;;
   "api repos/org/repo/git/ref/tags/"*)
     cat "$STATE/refs/${2#repos/org/repo/git/ref/tags/}" 2> /dev/null || exit 1
+    ;;
+  "api repos/org/repo/compare/"*)
+    # <sha>...refs/tags/<tag> on a linear default branch: OLDER, SHA, OTHER.
+    spec=${2#repos/org/repo/compare/}
+    base=${spec%%...*} head=$(cat "$STATE/refs/${spec#*...refs/tags/}")
+    pos() { case "$1" in 3333333333333333333333333333333333333333) echo 0 ;; 1111111111111111111111111111111111111111) echo 1 ;; 2222222222222222222222222222222222222222) echo 2 ;; *) echo "unknown commit $1" >&2; exit 2 ;; esac; }
+    b=$(pos "$base") h=$(pos "$head")
+    if [ "$h" -gt "$b" ]; then s=ahead; elif [ "$h" -lt "$b" ]; then s=behind; else s=identical; fi
+    q=""
+    for ((i = 1; i <= $#; i++)); do
+      if [ "${!i}" = --jq ]; then j=$((i + 1)); q=${!j}; fi
+    done
+    jq -n --arg s "$s" '{status: $s}' | jq -r "$q"
     ;;
   "api --paginate")
     # Answers with the JSON GitHub would send and applies the caller's own
@@ -721,5 +735,20 @@ report pass "$(draft v1.2.0 '')" "older tags and own prereleases do not count as
 fresh
 echo "$SHA" > "$STATE/refs/v1.2.0"
 report fail "$(draft v1.2.0-rc1 '')" "a prerelease is overtaken by its final version"
+
+fresh
+echo "$OTHER" > "$STATE/refs/v1.2.1"
+report fail "$(draft v1.2.0 '')" "a newer tag on a later commit overtakes"
+
+# A mistaken explicit v2.0.0 was tagged and abandoned; the next run cut v1.1.1.
+fresh
+echo "$OLDER" > "$STATE/refs/v2.0.0"
+report pass "$(draft v1.1.1 '')" "a higher tag on an earlier commit does not overtake"
+report 1 "$(calls 'release create v1.1.1')" "and the draft is created"
+
+fresh
+echo "$OTHER" > "$STATE/refs/v1.1.1"
+report fail "$(draft v2.0.0 '')" "a lower tag on a later commit overtakes"
+report 1 "$(grep -c 'v2.0.0 was superseded: v1.1.1' "$STATE/log")" "naming it"
 
 exit "$fail"
