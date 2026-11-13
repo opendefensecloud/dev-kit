@@ -187,13 +187,24 @@ jobs:
           releases=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 \
             --json tagName --jq '.[].tagName')
 
+          # A tag that a later release contains is not burned any more: that
+          # release shipped its changes. So only tags no released tag on this
+          # branch reaches count. By ancestry, not version order: v1.2.0-rc1
+          # sorts after v1.2.0.
+          shipped=()
+          while IFS= read -r tag; do
+            if grep -qxF -- "$tag" <<< "$releases"; then
+              shipped+=(--no-merged "$tag")
+            fi
+          done < <(git tag --merged HEAD --list 'v*')
+
           burned=()
           while IFS= read -r tag; do
             [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]] || continue
             if ! grep -qxF -- "$tag" <<< "$releases"; then
               burned+=("$tag")
             fi
-          done < <(git tag --merged HEAD --list 'v*' | sort -V)
+          done < <(git tag --merged HEAD "${shipped[@]}" --list 'v*' | sort -V)
 
           if [ ${#burned[@]} -eq 0 ]; then
             echo "burned=" >> "$GITHUB_OUTPUT"

@@ -412,6 +412,33 @@ report "" "$(out burned)" "nothing is burned"
 report "" "$(out ignore)" "and nothing is ignored"
 
 fresh
+report pass "$(exec_step "$BREPO" "$BURNED_STEP")" "without any release"
+report "v1.0.0 v1.1.0" "$(out burned)" "every version tag on the branch is burned"
+
+# A second release after the burned one: v1.1.1 shipped v1.1.0's changes,
+# then v1.1.2 is tagged and never released either.
+SREPO="$TESTDIR/shipped"
+git clone -q "$BREPO" "$SREPO"
+sgit() { git -C "$SREPO" -c user.email=t@example.com -c user.name=T "$@"; }
+sgit tag v1.1.1
+sgit commit -q --allow-empty -m "fix: after the next release"
+sgit tag v1.1.2
+sgit commit -q --allow-empty -m "fix: after that"
+
+fresh
+release v1.0.0 false
+release v1.1.1 false
+report pass "$(exec_step "$SREPO" "$BURNED_STEP")" "after a release that shipped a burned tag"
+report "v1.1.2" "$(out burned)" "the shipped burned tag is not burned any more, a newer one is"
+
+fresh
+release v1.0.0 false
+release v1.1.1 false
+release v1.1.2 false
+report pass "$(exec_step "$SREPO" "$BURNED_STEP")" "with the newer one released too"
+report "" "$(out burned)" "nothing is burned"
+
+fresh
 report pass "$(exec_step "$BREPO" "$CTX" CLIFF_CONFIG="$ROOT/cliff.toml" IGNORE_TAGS='^(v1\.1\.0)$')" \
   "the context is read with the burned tag ignored"
 report v1.0.0 "$(out previous)" "the previous release is the last released tag"
