@@ -646,7 +646,7 @@ jobs:
       sha: ${{ needs.release.outputs.sha }}
 ```
 
-See [`.github/workflows/release-self.yml`](.github/workflows/release-self.yml) for the complete caller used by this repo. The `inputs` context is empty on `push`, so the caller selects each value by event; passing an empty string to a boolean input fails workflow validation. The concurrency block keeps releases queued one at a time and never cancelled (a run in flight may already have tagged), while push previews get their own group, so a merge cannot cancel a release dispatch waiting in the queue.
+See [`.github/workflows/release-self.yml`](.github/workflows/release-self.yml) for the complete caller used by this repo. The `inputs` context is empty on `push`, so the caller selects each value by event; passing an empty string to a boolean input fails workflow validation. The concurrency block runs one release at a time and never cancels a running one (it may already have tagged). It is not a queue: GitHub keeps one run pending, and a newer dispatch replaces it, which is harmless since a pending run has tagged nothing. Push previews get their own group, so a merge cannot replace a pending release dispatch.
 
 #### Required checks
 
