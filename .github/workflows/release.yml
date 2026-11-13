@@ -103,6 +103,20 @@ jobs:
                 echo "::error::Tag ${REF_NAME} does not point at a commit on ${DEFAULT_BRANCH}."
                 exit 1
               fi
+              # No release behind a later version tag: the draft job takes a
+              # later commit for a later attempt. Promoting the newest
+              # prerelease on its own commit stays possible.
+              later=()
+              while IFS= read -r tag; do
+                [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]] || continue
+                if ! git merge-base --is-ancestor "refs/tags/${tag}" HEAD; then
+                  later+=("$tag")
+                fi
+              done < <(git tag --list 'v*' --merged "$default_ref" | sort -V)
+              if [ ${#later[@]} -gt 0 ]; then
+                echo "::error::${later[*]} is on a later commit than ${REF_NAME}. Release from there, not from an earlier commit."
+                exit 1
+              fi
               ;;
             *)
               echo "::error::Releases must be cut from ${DEFAULT_BRANCH}; got ${REF_TYPE:-unknown} ${REF_NAME}."
@@ -311,6 +325,7 @@ jobs:
           INPUT_VERSION: ${{ inputs.version }}
           COMPUTED_VERSION: ${{ steps.ctx.outputs.computed }}
           UNRELEASED_HERE: ${{ steps.burned.outputs.unreleased_here }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
 
@@ -325,9 +340,15 @@ jobs:
           # One unreleased tag per commit: the draft job orders tags by commit,
           # and two on the same one by version only, which need not be the
           # order they were cut in.
+          # A dry run only previews, and just warns.
           if [ -n "${UNRELEASED_HERE:-}" ]; then
-            echo "::error::${release_sha} already carries ${UNRELEASED_HERE// /, }, tagged but never released. Re-run that run's failed jobs, or release once a new commit has landed."
-            exit 1
+            msg="${release_sha} already carries ${UNRELEASED_HERE// /, }, tagged but never released. Re-run that run's failed jobs, or release once a new commit has landed."
+            if [ "${DRY_RUN:-}" = "true" ]; then
+              echo "::warning::${msg}"
+            else
+              echo "::error::${msg}"
+              exit 1
+            fi
           fi
 
           # A computed version can land on a burned tag: its number is taken

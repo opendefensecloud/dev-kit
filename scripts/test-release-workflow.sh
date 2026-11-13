@@ -485,6 +485,38 @@ report 1 "$(grep -c 'already carries v1.1.0, tagged but never released' "$STATE/
 report 0 "$(grep -c '^version=' "$GITHUB_OUTPUT")" "and no version is put out"
 
 fresh
+report pass "$(exec_step "$BREPO" "$VERSION_STEP" INPUT_VERSION= COMPUTED_VERSION=v1.0.1 UNRELEASED_HERE=v1.1.0 DRY_RUN=true)" \
+  "a dry run on such a commit goes on"
+report 1 "$(grep -c '::warning::.*already carries v1.1.0' "$STATE/log")" "with a warning"
+
+# Dispatching from a tag: main is A (v1.0.0-rc1, v1.0.0-rc2) then B (v1.1.0).
+GUARD="$(step release.yml prepare "Guard - releases are cut from the default branch")"
+GREPO="$TESTDIR/fromtag"
+git -C "$TESTDIR" init -q -b main fromtag
+ggit() { git -C "$GREPO" -c user.email=t@example.com -c user.name=T "$@"; }
+ggit commit -q --allow-empty -m "feat: a"
+ggit tag v1.0.0-rc1
+ggit tag v1.0.0-rc2
+ggit commit -q --allow-empty -m "feat: b"
+ggit tag v1.1.0
+ggit update-ref refs/remotes/origin/main HEAD
+guard() { # guard <tag to dispatch from>
+  ggit checkout -q --detach "$1"
+  exec_step "$GREPO" "$GUARD" REF_TYPE=tag REF_NAME="$1" DEFAULT_BRANCH=main
+}
+
+fresh
+report fail "$(guard v1.0.0-rc2)" "a dispatch from a tag behind a later version tag fails"
+report 1 "$(grep -c 'v1.1.0 is on a later commit than v1.0.0-rc2' "$STATE/log")" "naming it"
+
+fresh
+report pass "$(guard v1.1.0)" "a dispatch from the newest tagged commit passes, other tags there included"
+ggit tag -d v1.1.0 > /dev/null
+
+fresh
+report pass "$(guard v1.0.0-rc2)" "with nothing tagged after it, a prerelease can be promoted"
+
+fresh
 report pass "$(exec_step "$BREPO" "$VERSION_STEP" INPUT_VERSION= COMPUTED_VERSION=v1.2.0)" "a free version"
 report v1.2.0 "$(out version)" "is used as computed"
 
