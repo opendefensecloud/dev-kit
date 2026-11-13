@@ -206,6 +206,17 @@ jobs:
             fi
           done < <(git tag --merged HEAD "${shipped[@]}" --list 'v*' | sort -V)
 
+          # Version tags on this very commit without a release: a second tag
+          # here could not be ordered against them (tags carry no time).
+          here=()
+          while IFS= read -r tag; do
+            [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]] || continue
+            if ! grep -qxF -- "$tag" <<< "$releases"; then
+              here+=("$tag")
+            fi
+          done < <(git tag --points-at HEAD --list 'v*' | sort -V)
+          echo "unreleased_here=${here[*]}" >> "$GITHUB_OUTPUT"
+
           if [ ${#burned[@]} -eq 0 ]; then
             echo "burned=" >> "$GITHUB_OUTPUT"
             echo "ignore=" >> "$GITHUB_OUTPUT"
@@ -299,6 +310,7 @@ jobs:
         env:
           INPUT_VERSION: ${{ inputs.version }}
           COMPUTED_VERSION: ${{ steps.ctx.outputs.computed }}
+          UNRELEASED_HERE: ${{ steps.burned.outputs.unreleased_here }}
         run: |
           set -euo pipefail
 
@@ -307,6 +319,14 @@ jobs:
 
           if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
             echo "::error::Version must look like v1.2.3 or v1.2.3-rc1, got '${version}'."
+            exit 1
+          fi
+
+          # One unreleased tag per commit: the draft job orders tags by commit,
+          # and two on the same one by version only, which need not be the
+          # order they were cut in.
+          if [ -n "${UNRELEASED_HERE:-}" ]; then
+            echo "::error::${release_sha} already carries ${UNRELEASED_HERE// /, }, tagged but never released. Re-run that run's failed jobs, or release once a new commit has landed."
             exit 1
           fi
 

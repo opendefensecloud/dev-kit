@@ -131,7 +131,8 @@ jobs:
               # are cut from the default branch, so a later run tags this
               # commit or a later one. A lower version can supersede a mistaken
               # higher one, and a higher burned tag can be older. On the same
-              # commit only the version order is left.
+              # commit the version order decides: release.yml puts no second tag
+              # on a commit with an unreleased one, so the other there is released.
               # sort -V ranks v1.2.0-rc1 above v1.2.0; a ~ sorts below anything.
               semver_key() { sed -E 's/^(v[0-9]+\.[0-9]+\.[0-9]+)-/\1~/'; }
               # Captured first: a failed lookup must stop the run, not read as

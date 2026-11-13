@@ -479,6 +479,12 @@ report fail "$(exec_step "$BREPO" "$VERSION_STEP" INPUT_VERSION=v1.1.0 COMPUTED_
   "an explicit version that is taken fails"
 
 fresh
+report fail "$(exec_step "$BREPO" "$VERSION_STEP" INPUT_VERSION= COMPUTED_VERSION=v1.0.1 UNRELEASED_HERE=v1.1.0)" \
+  "a commit that already carries an unreleased tag gets no second one"
+report 1 "$(grep -c 'already carries v1.1.0, tagged but never released' "$STATE/log")" "naming it"
+report 0 "$(grep -c '^version=' "$GITHUB_OUTPUT")" "and no version is put out"
+
+fresh
 report pass "$(exec_step "$BREPO" "$VERSION_STEP" INPUT_VERSION= COMPUTED_VERSION=v1.2.0)" "a free version"
 report v1.2.0 "$(out version)" "is used as computed"
 
@@ -491,6 +497,15 @@ PREPO="$TESTDIR/pre"
 git -C "$TESTDIR" init -q -b main pre
 git -C "$PREPO" -c user.email=t@example.com -c user.name=T commit -q --allow-empty -m "chore: init"
 for t in v2.0.0-rc1 v2.0.0-rc2 v2.0.0-alpha.9 v2.0.0-beta; do git -C "$PREPO" tag "$t"; done
+
+fresh
+release v2.0.0-rc1 false
+report pass "$(exec_step "$PREPO" "$BURNED_STEP")" "tags on the commit being released"
+report "v2.0.0-alpha.9 v2.0.0-beta v2.0.0-rc2" "$(out unreleased_here)" "the ones without a release are reported"
+
+fresh
+report pass "$(exec_step "$BREPO" "$BURNED_STEP")" "a commit without version tags"
+report "" "$(out unreleased_here)" "reports none (vnext is not a version)"
 
 fresh
 report pass "$(exec_step "$PREPO" "$VERSION_STEP" INPUT_VERSION= COMPUTED_VERSION=v2.0.0-rc1)" \
