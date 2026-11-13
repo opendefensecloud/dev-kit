@@ -594,77 +594,131 @@ Modify `flake.nix` to adjust Go version, packages, and pre-commit hooks:
 
 ### Release workflow
 
-The shared release workflow lives in
-`opendefensecloud/dev-kit/.github/workflows/release.yml`, computes version and
-notes with git-cliff, and creates or updates a draft release. An existing draft
-for the computed version is updated in place, so a caller can keep the draft
-current on every push to the default branch.
+Two shared workflows cut a release: `release.yml` computes version and notes
+with git-cliff, checks the notes, checks that the commit passed its required
+checks (e2e, typically) and tags it; `release-draft.yml` then creates the draft
+release with those notes and the caller's assets in one step. In between, a
+caller with assets builds them from the tagged commit. Publishing the draft
+triggers repo-specific delivery (Docker, Helm, docs). Notes are rendered from
+merge commits and grouped by conventional type using the shared `cliff.toml` in
+dev-kit, so consumers do not keep their own copy.
 
-The tag is created by publishing the draft, or during a manual run when
-`create_tag` is enabled. Publishing the draft triggers repo-specific build jobs
-(Docker, Helm, docs, assets). Notes are rendered from merge commits and grouped
-by conventional type using the shared `cliff.toml` in dev-kit, so consumers do
-not keep their own copy.
+To release:
 
-#### Using the reusable workflow
+1. Wait until the required checks on the default branch have passed.
+2. **Run workflow** on the default branch (version optional, `dry_run` unchecked).
+3. Wait for the run to finish: the job summary links the complete draft.
+4. Review the draft and click **Publish**.
 
-Add a job that calls the shared workflow. The caller owns the triggers and inputs:
+No release object exists between releases. A push to the default branch runs
+as a dry run and previews the next version, the notes and the state of the
+required checks in its job summary.
+
+#### Using the reusable workflows
+
+The caller owns the triggers and inputs and chains the two workflows:
 
 ```yaml
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && 'release' || 'release-preview' }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
 jobs:
   release:
     uses: opendefensecloud/dev-kit/.github/workflows/release.yml@<40-char-sha> # <tag>
     permissions:
-      contents: write
+      contents: write # create the tag
+      checks: read # required_checks
+    with:
+      version: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '' }}
+      dry_run: ${{ github.event_name != 'workflow_dispatch' || inputs.dry_run }}
+      force: ${{ github.event_name == 'workflow_dispatch' && inputs.force }}
+      required_checks: '["test-e2e / test-e2e"]'
+
+  draft:
+    needs: release
+    if: ${{ needs.release.outputs.tag_created == 'true' }}
+    uses: opendefensecloud/dev-kit/.github/workflows/release-draft.yml@<40-char-sha> # <tag>
+    permissions:
+      contents: write # create the draft release
+    with:
+      version: ${{ needs.release.outputs.version }}
+      sha: ${{ needs.release.outputs.sha }}
 ```
 
-See [`.github/workflows/release-self.yml`](.github/workflows/release-self.yml) for the complete caller used by this repo: `workflow_dispatch` inputs, `push: branches: [main]`, and the event-based input selection.
+See [`.github/workflows/release-self.yml`](.github/workflows/release-self.yml) for the complete caller used by this repo. The `inputs` context is empty on `push`, so the caller selects each value by event; passing an empty string to a boolean input fails workflow validation. The concurrency block runs one release at a time and never cancels a running one (it may already have tagged). It is not a queue: GitHub keeps one run pending, and a newer dispatch replaces it, which is harmless since a pending run has tagged nothing. Push previews get their own group, so a merge cannot replace a pending release dispatch.
 
-#### Keeping the draft up to date on pushes
+#### Required checks
 
-`release-self.yml` also shows the push wiring. The `inputs` context is empty on `push`, so the caller selects each value by event; passing an empty string to a boolean input fails workflow validation. A push run passes `create_tag: false`, so it never creates a tag or publishes. If no `feat`, `fix`, `perf` or breaking change landed since the previous tag, the run succeeds without touching the draft. A manual run still fails in that case unless `version` is supplied.
+`required_checks` names the check runs, as shown on the commit, that must have passed before a commit is tagged. A check that failed, is still running, was skipped or never ran blocks the release; a dry run only reports it. Typically these are the e2e jobs that run on every push to the default branch.
+
+Those jobs usually skip documentation-only pushes (`paths-ignore`). Set `checks_skip_paths` to the same globs (default `["docs/**", "**/*.md"]`). They match as in GitHub's path filters: `*` stops at a `/`, `**` crosses it, and a leading `**/` also matches at the top level; `?`, `+`, `[]` and `!` are refused. A commit without the checks is then released on those of the nearest earlier commit that ran them, but only if every change since that commit matches `checks_skip_paths`. A code commit whose checks have not started yet therefore fails the run instead of being released on an older result. Use `'[]'` when the checks run on every push.
 
 #### Attaching release assets
 
-If your caller builds assets, add a job that depends on the release job and gate it on both the call result and the draft output. The example assumes the caller also exposes `retry_assets_for` for recovery:
+Add a build job between the two calls. It checks out the tagged commit, builds, and hands the files over as a workflow artifact; it needs no `contents: write`. Name the artifact in `assets_artifact`:
 
 ```yaml
   assets:
     needs: release
-    # result == 'success' matters: validation of a retry target happens in the
-    # called workflow, and always() alone would still start this job when it failed.
-    # draft_updated is empty on the retry path, so the retry input covers that case.
-    if: ${{ always() && needs.release.result == 'success' && (needs.release.outputs.draft_updated == 'true' || inputs.retry_assets_for != '') }}
-    runs-on: ubuntu-24.04
+    if: ${{ needs.release.outputs.tag_created == 'true' }}
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      id-token: write # keyless signing
+      attestations: write # build provenance
+    steps:
+      - uses: actions/checkout@<40-char-sha> # v7
+        with:
+          ref: ${{ needs.release.outputs.sha }}
+          persist-credentials: false
+      # ... build, sign, attest into dist/ ...
+      - uses: actions/upload-artifact@<40-char-sha> # v7
+        with:
+          name: release-assets
+          path: dist/
+          if-no-files-found: error
+          overwrite: true # a re-run uploads again into the same run
+
+  draft:
+    needs: [release, assets]
+    if: ${{ needs.release.outputs.tag_created == 'true' }}
+    uses: opendefensecloud/dev-kit/.github/workflows/release-draft.yml@<40-char-sha> # <tag>
     permissions:
       contents: write
-      id-token: write
-      attestations: write
-    env:
-      VERSION: ${{ inputs.retry_assets_for || needs.release.outputs.version }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@<40-char-sha> # v7
-        with:
-          ref: ${{ needs.release.outputs.sha || inputs.retry_assets_for }}
-          fetch-depth: 0
-          persist-credentials: false
-      # ... build, sign, attest, upload assets to the draft release ...
+    with:
+      version: ${{ needs.release.outputs.version }}
+      sha: ${{ needs.release.outputs.sha }}
+      assets_artifact: release-assets
 ```
+
+Every file in the artifact becomes one release asset, so file names must be unique across subdirectories and use only letters, digits, `.`, `_` and `-`, not starting or ending with `.`; GitHub would rename others. `release-notes` is the artifact name `release.yml` hands the notes over in; don't use it for your own. Pin both workflows to the same dev-kit commit: they share that hand-off.
 
 #### Requirements
 
 - **Shared `cliff.toml`**: No config file is needed by default. The workflow checks out `cliff.toml` from dev-kit at the same commit as the reusable workflow and uses it. Pass `cliff_config` to use a repository-specific file instead; the bundled notes guard then falls back to best-effort checks for that override.
 - **Release-notes check**: The workflow checks out its own tooling at the commit that defines it (`job.workflow_sha`) and runs the bundled `check-release-notes` action, so consumers do not need to copy the check. `job.workflow_*` is available on github.com, not GHES.
-- **Permissions**: The caller must grant `contents: write` to the job that calls the shared workflow (and to any jobs that create tags/releases or upload assets).
+- **Permissions**: `release.yml` needs `contents: write` and `checks: read`, `release-draft.yml` needs `contents: write`. The asset build needs neither.
 - **Default branch only**: Releases must be cut from the repository's default branch. A branch trigger must name the default branch; a tag trigger is accepted only when the tag points at a commit on it. Other triggers are rejected.
 - **Merge commits**: The shared config renders the merge commits on the default branch. A commit pushed directly to the branch is reported by the notes guard and fails the release unless `force` is set. Squash and rebase merges are treated the same way.
 - **Prior release tag**: The repository must already have a release tag. git-cliff derives the changelog boundary from the previous tag, and the workflow fails if there is none. Passing an explicit `version` does not bypass this.
-- **Draft maintenance**: A non-dry run creates the draft for the computed version or updates the existing draft in place (title, notes, prerelease flag and target commit). If the computed version moves while the draft is still unpublished, the draft is renamed to the new version and updated. There is one pending draft, not one per push. The `draft_updated` output is `true` whenever the draft is ready, whether this run created or updated it.
-- **Tag creation**: The tag is created during the run when `create_tag` is true (the default); a push-triggered run passes `false`, so it only maintains the draft. Otherwise publishing the draft creates the tag from the draft's target commit. The draft is written before the tag, so a failed tag leaves an updateable draft and no tag, and re-running retries. The workflow never deletes a tag.
-- **Tag immutability**: Where a `protect-release-tags` ruleset is active, a `v*` tag cannot be moved or deleted. Before a tag exists, abandon a draft by deleting it. Once a tag exists (for example after a run with `create_tag`), publish that draft or cut the next patch: deleting the draft leaves the tag behind and burns the version.
-- **Publishing the draft**: Publishing creates the tag at the draft's target commit (the latest commit covered by the last run) and triggers downstream workflows (Docker, Helm, docs). Prerelease versions (containing `-`) are marked as prereleases automatically. Publishing a draft whose tag already exists leaves that tag in place.
-- **Asset retry**: `retry_assets_for` skips version and notes and must name an existing **draft** release. The workflow rejects a published or missing release, and rejects the combination with `dry_run`. Asset jobs must gate on `needs.<call>.result == 'success'` (see Attaching release assets above), otherwise `always()` would run them after a failed validation.
+- **Nothing releasable**: If no `feat`, `fix`, `perf` or breaking change landed since the previous tag, a push or scheduled run succeeds with a notice. A manual run fails unless `version` is supplied.
+- **One release at a time**: A manual run fails while any draft release exists; a dry run warns. A draft whose tag exists is a release that was cut but not published: publish it, or delete the draft (its tag becomes a burned tag, below).
+- **Protected release tags**: No tag is created unless an active tag ruleset without bypass actors refuses moving and deleting it (`make repo-settings` adds `protect-release-tags`); a dry run warns. GitHub shows a ruleset's bypass actors only to its admins, so the check sees them only where it can, and otherwise checks that the workflow itself cannot bypass it. The draft is checked against its tag once, when it is created; only a tag that cannot move keeps assets and tag matching until someone publishes. `release-draft.yml` also refuses to draft a tag that does not point at the commit the assets were built from.
+- **Burned tags**: The tag is created before anything is built, so a run can leave a tag that is never released: the wrong commit was dispatched, the build cannot pass on that commit, or a failed run was not re-run in time. Such a tag stays (it cannot be deleted) but nothing was shipped from it. Delete its draft, if any, and run the release again: tags without a release are ignored as release boundaries, so the next release's notes, notes check and version bump start at the last released tag, the computed version skips taken numbers, and the notes name the burned version. Once a release has shipped its changes, a burned tag no longer counts. A commit carries at most one unreleased tag: to release the commit of a burned tag under another version, wait for the next commit. Never reuse a burned number with an explicit `version`; it is refused anyway.
+- **Recovery**: If the asset build or the draft job fails, use **Re-run failed jobs**: the tag already exists, so the rebuild uses the same commit; the draft job creates or updates the same draft, and drops assets the rebuild did not produce. A re-run that a later release run has overtaken (it found this tag without a release and cut the next version) is refused, as is drafting while another draft is pending. **Re-run all jobs** cannot recover a release, since the version computation then finds its own tag, and runs older than 30 days cannot be re-run at all. Either way the tag is burned: delete the draft and release again.
+- **Publishing**: Prerelease versions (containing `-`) are marked as prereleases automatically. Publishing triggers downstream workflows (Docker, Helm, docs), which build from the tag.
+
+#### Known gaps
+
+- `gh release create` creates the draft before uploading its files, so the draft is briefly visible without all assets. Publish only after the run has finished. If the release is immutable, remaining uploads fail; otherwise, assets can still change after publication.
+
+#### Upgrading from v4
+
+1. **Protect release tags and delete every draft release** first. Run `make repo-settings` as an admin with this version of dev-kit; v5 refuses to tag without `protect-release-tags`. A v4 draft has no tag and points at whichever commit the last push run left it on; publishing it would ship its old assets. v5 refuses to release while one exists.
+2. Drop inputs `create_tag` and `retry_assets_for` and output `draft_updated` from the caller, including any `run-name` that refers to them.
+3. Pass `dry_run: true` on push, use the concurrency block above, grant `checks: read`, set `required_checks` (and `checks_skip_paths` if they differ from the default), and add the `draft` job.
+4. With assets: upload them as an artifact from a job between the two calls instead of to the release.
 
 ## Design Decisions
 
