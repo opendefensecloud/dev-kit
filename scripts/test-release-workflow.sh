@@ -500,9 +500,9 @@ ggit tag v1.0.0-rc2
 ggit commit -q --allow-empty -m "feat: b"
 ggit tag v1.1.0
 ggit update-ref refs/remotes/origin/main HEAD
-guard() { # guard <tag to dispatch from>
+guard() { # guard <tag to dispatch from> [VAR=value...]
   ggit checkout -q --detach "$1"
-  exec_step "$GREPO" "$GUARD" REF_TYPE=tag REF_NAME="$1" DEFAULT_BRANCH=main
+  exec_step "$GREPO" "$GUARD" REF_TYPE=tag REF_NAME="$1" DEFAULT_BRANCH=main "${@:2}"
 }
 
 fresh
@@ -511,6 +511,36 @@ report 1 "$(grep -c 'v1.1.0 is on a later commit than v1.0.0-rc2' "$STATE/log")"
 
 fresh
 report pass "$(guard v1.1.0)" "a dispatch from the newest tagged commit passes, other tags there included"
+
+fresh
+report pass "$(guard v1.0.0-rc2 DRY_RUN=true)" "a dry run from such a tag goes on"
+report 1 "$(grep -c '::warning::v1.1.0 is on a later commit' "$STATE/log")" "with a warning"
+
+# A re-run keeps the run's commit: a branch run on A, after B was tagged.
+branch_guard() { # branch_guard <commit> [VAR=value...]
+  ggit checkout -q --detach "$1"
+  shift
+  exec_step "$GREPO" "$GUARD" REF_TYPE=branch REF_NAME=main DEFAULT_BRANCH=main "$@"
+}
+
+fresh
+report fail "$(branch_guard v1.0.0-rc2)" "a re-run of a branch run behind a later version tag fails"
+report 1 "$(grep -c "v1.1.0 is on a later commit than this run's commit $(ggit rev-parse --short v1.0.0-rc2)" "$STATE/log")" \
+  "naming the tag and the commit"
+
+fresh
+report pass "$(branch_guard v1.0.0-rc2 DRY_RUN=true)" "a dry run of such a re-run goes on"
+report 1 "$(grep -c '::warning::v1.1.0 is on a later commit' "$STATE/log")" "with a warning"
+
+fresh
+report pass "$(branch_guard main)" "a branch run at the tip passes"
+
+ggit checkout -q -b side v1.0.0-rc2
+ggit commit -q --allow-empty -m "feat: off main"
+fresh
+report fail "$(branch_guard side)" "a branch run on a commit not on main fails"
+report 1 "$(grep -c "This run's commit is not on main" "$STATE/log")" "saying so"
+ggit checkout -q main
 ggit tag -d v1.1.0 > /dev/null
 
 fresh
