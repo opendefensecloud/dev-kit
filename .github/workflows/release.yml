@@ -84,41 +84,27 @@ jobs:
         run: |
           set -euo pipefail
 
-          case "$REF_TYPE" in
-            branch)
-              if [ "$REF_NAME" != "$DEFAULT_BRANCH" ]; then
-                echo "::error::Releases are cut from ${DEFAULT_BRANCH}, not ${REF_NAME}."
-                exit 1
-              fi
-              # A re-run keeps the run's commit, which may no longer be the tip.
-              at="this run's commit $(git rev-parse --short HEAD)"
-              what="This run's commit"
-              ;;
-            tag)
-              at="$REF_NAME"
-              what="Tag ${REF_NAME}"
-              ;;
-            *)
-              echo "::error::Releases must be cut from ${DEFAULT_BRANCH}; got ${REF_TYPE:-unknown} ${REF_NAME}."
-              exit 1
-              ;;
-          esac
+          # A tag is refused too: the version input sets the version.
+          if [ "$REF_TYPE" != branch ] || [ "$REF_NAME" != "$DEFAULT_BRANCH" ]; then
+            echo "::error::Releases are cut from ${DEFAULT_BRANCH}, not ${REF_TYPE:-unknown} ${REF_NAME}. Run the workflow from ${DEFAULT_BRANCH}; pass version for a specific one, a release candidate included."
+            exit 1
+          fi
 
-          # The release must point at code that landed on the default branch.
+          # A re-run keeps the run's commit, which may no longer be the tip.
           # fetch-depth: 0 puts the branch tip in refs/remotes/origin/<default>.
+          at="this run's commit $(git rev-parse --short HEAD)"
           default_ref="refs/remotes/origin/${DEFAULT_BRANCH}"
           if ! git rev-parse -q --verify "$default_ref" >/dev/null; then
             echo "::error::Could not resolve ${default_ref}; a release needs full history."
             exit 1
           fi
           if ! git merge-base --is-ancestor HEAD "$default_ref"; then
-            echo "::error::${what} is not on ${DEFAULT_BRANCH}."
+            echo "::error::This run's commit is not on ${DEFAULT_BRANCH}."
             exit 1
           fi
           # No release behind a later version tag: the draft job takes a later
-          # commit for a later attempt. That is a re-run of an older run, or a
-          # dispatch from an older tag; a new run from the branch is at its tip.
-          # Promoting the newest prerelease on its own commit stays possible.
+          # commit for a later attempt. Only a re-run of an older run gets
+          # here; a new run is at the tip.
           later=()
           while IFS= read -r tag; do
             [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]] || continue
@@ -390,9 +376,8 @@ jobs:
             exit 1
           fi
 
-          # A second version on a commit must rank above those already there
-          # (promoting a prerelease, say): the draft job orders tags on one
-          # commit by version. The unreleased ones were refused above.
+          # A second version on a commit must rank above those already there:
+          # the draft job orders tags on one commit by version. The unreleased ones were refused above.
           # sort -V ranks v1.2.0-rc1 above v1.2.0; a ~ sorts below anything.
           semver_key() { sed -E 's/^(v[0-9]+\.[0-9]+\.[0-9]+)-/\1~/'; }
           above=()

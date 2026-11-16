@@ -517,7 +517,7 @@ report 1 "$(grep -c '::warning::.*which ranks above v1.0.1' "$STATE/log")" "with
 fresh
 report pass "$(here_version v1.2.0)" "a higher version on that commit passes"
 
-# Dispatching from a tag: main is A (v1.0.0-rc1, v1.0.0-rc2) then B (v1.1.0).
+# The branch guard: main is A (v1.0.0-rc1, v1.0.0-rc2) then B (v1.1.0).
 GUARD="$(step release.yml prepare "Guard - releases are cut from the default branch")"
 GREPO="$TESTDIR/fromtag"
 git -C "$TESTDIR" init -q -b main fromtag
@@ -534,15 +534,15 @@ guard() { # guard <tag to dispatch from> [VAR=value...]
 }
 
 fresh
-report fail "$(guard v1.0.0-rc2)" "a dispatch from a tag behind a later version tag fails"
-report 1 "$(grep -c 'v1.1.0 is on a later commit than v1.0.0-rc2' "$STATE/log")" "naming it"
+report fail "$(guard v1.1.0)" "a run from a tag fails, even from the newest tagged commit"
+report 1 "$(grep -c 'not tag v1.1.0. Run the workflow from main' "$STATE/log")" "pointing at the branch"
 
 fresh
-report pass "$(guard v1.1.0)" "a dispatch from the newest tagged commit passes, other tags there included"
+report fail "$(guard v1.1.0 DRY_RUN=true)" "so does a dry run from it"
 
 fresh
-report pass "$(guard v1.0.0-rc2 DRY_RUN=true)" "a dry run from such a tag goes on"
-report 1 "$(grep -c '::warning::v1.1.0 is on a later commit' "$STATE/log")" "with a warning"
+report fail "$(exec_step "$GREPO" "$GUARD" REF_TYPE=branch REF_NAME=feature DEFAULT_BRANCH=main)" \
+  "a run from another branch fails"
 
 # A re-run keeps the run's commit: a branch run on A, after B was tagged.
 branch_guard() { # branch_guard <commit> [VAR=value...]
@@ -569,10 +569,6 @@ fresh
 report fail "$(branch_guard side)" "a branch run on a commit not on main fails"
 report 1 "$(grep -c "This run's commit is not on main" "$STATE/log")" "saying so"
 ggit checkout -q main
-ggit tag -d v1.1.0 > /dev/null
-
-fresh
-report pass "$(guard v1.0.0-rc2)" "with nothing tagged after it, a prerelease can be promoted"
 
 fresh
 report pass "$(exec_step "$BREPO" "$VERSION_STEP" INPUT_VERSION= COMPUTED_VERSION=v1.2.0)" "a free version"
