@@ -154,7 +154,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          draft_tags=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 \
+          draft_tags=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 \
             --json tagName,isDraft --jq '.[] | select(.isDraft) | .tagName')
 
           cut=() untagged=()
@@ -213,16 +213,18 @@ jobs:
           releases=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 \
             --json tagName --jq '.[].tagName')
 
-          # A tag that a later release contains is not burned any more: that
-          # release shipped its changes. So only tags no released tag on this
-          # branch reaches count. By ancestry, not version order: v1.2.0-rc1
-          # sorts after v1.2.0.
-          shipped=()
+          # Every unreleased tag is ignored as a release boundary. The notes
+          # name only those no released tag on this branch reaches: a release
+          # that contains a burned tag shipped its changes. By ancestry, not
+          # version order: v1.2.0-rc1 sorts after v1.2.0.
+          shipped=() unreleased=()
           while IFS= read -r tag; do
             if grep -qxF -- "$tag" <<< "$releases"; then
               shipped+=(--no-merged "$tag")
+            elif [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+              unreleased+=("$tag")
             fi
-          done < <(git tag --merged HEAD --list 'v*')
+          done < <(git tag --merged HEAD --list 'v*' | sort -V)
 
           burned=()
           while IFS= read -r tag; do
@@ -243,15 +245,14 @@ jobs:
           done < <(git tag --points-at HEAD --list 'v*' | sort -V)
           echo "unreleased_here=${here[*]}" >> "$GITHUB_OUTPUT"
 
-          if [ ${#burned[@]} -eq 0 ]; then
-            echo "burned=" >> "$GITHUB_OUTPUT"
-            echo "ignore=" >> "$GITHUB_OUTPUT"
-            exit 0
+          ignore=""
+          if [ ${#unreleased[@]} -gt 0 ]; then
+            # shellcheck disable=SC2016 # the $ in the sed bracket expression is literal
+            ignore="^($(printf '%s\n' "${unreleased[@]}" | sed 's/[][\.*^$()+?{}|]/\\&/g' | paste -sd '|'))$"
           fi
-
-          # shellcheck disable=SC2016 # the $ in the sed bracket expression is literal
-          ignore="^($(printf '%s\n' "${burned[@]}" | sed 's/[][\.*^$()+?{}|]/\\&/g' | paste -sd '|'))$"
-          echo "::notice::Tagged but never released: ${burned[*]}. Their changes go into this release."
+          if [ ${#burned[@]} -gt 0 ]; then
+            echo "::notice::Tagged but never released: ${burned[*]}. Their changes go into this release."
+          fi
           {
             echo "burned=${burned[*]}"
             echo "ignore=${ignore}"
@@ -317,7 +318,7 @@ jobs:
           if [ "$releasable_count" -eq 0 ]; then
             # A push to the default branch has nothing to preview, and a
             # scheduled run has nothing to cut; only an explicitly requested
-            # release (manual dispatch or tag push) should fail for this.
+            # release (a manual dispatch) should fail for this.
             if { [ "$EVENT_NAME" = "push" ] && [ "$REF_TYPE" = "branch" ]; } ||
               [ "$EVENT_NAME" = "schedule" ]; then
               echo "::notice::No feat/fix/perf or breaking commits since ${PREVIOUS_TAG}; nothing to release."

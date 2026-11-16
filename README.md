@@ -696,7 +696,7 @@ Every file in the artifact becomes one release asset, so file names must be uniq
 
 #### Requirements
 
-- **Shared `cliff.toml`**: No config file is needed by default. The workflow checks out `cliff.toml` from dev-kit at the same commit as the reusable workflow and uses it. Pass `cliff_config` to use a repository-specific file instead; the bundled notes guard then falls back to best-effort checks for that override.
+- **Shared `cliff.toml`**: No config file is needed by default. The workflow checks out `cliff.toml` from dev-kit at the same commit as the reusable workflow and uses it. Pass `cliff_config` to use a repository-specific file instead; the bundled notes guard then falls back to best-effort checks for that override. While unreleased tags exist, the workflow passes them as `--ignore-tags`, which replaces an `ignore_tags` set in that file.
 - **Release-notes check**: The workflow checks out its own tooling at the commit that defines it (`job.workflow_sha`) and runs the bundled `check-release-notes` action, so consumers do not need to copy the check. `job.workflow_*` is available on github.com, not GHES.
 - **Permissions**: `release.yml` needs `contents: write` and `checks: read`, `release-draft.yml` needs `contents: write`. The asset build needs neither.
 - **Default branch only**: Releases must be cut from the repository's default branch. A branch trigger must name the default branch, a tag trigger a tag on it (promoting the newest prerelease, say). Either way no version tag may sit on a later commit, so re-running an old run after a newer one tagged is refused: start a new run instead. Dry runs only warn. Other triggers are rejected.

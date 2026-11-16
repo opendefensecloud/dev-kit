@@ -91,19 +91,6 @@ case "$1 $2" in
   "api repos/org/repo/git/ref/tags/"*)
     cat "$STATE/refs/${2#repos/org/repo/git/ref/tags/}" 2> /dev/null || exit 1
     ;;
-  "api repos/org/repo/compare/"*)
-    # <sha>...refs/tags/<tag> on a linear default branch: OLDER, SHA, OTHER.
-    spec=${2#repos/org/repo/compare/}
-    base=${spec%%...*} head=$(cat "$STATE/refs/${spec#*...refs/tags/}")
-    pos() { case "$1" in 3333333333333333333333333333333333333333) echo 0 ;; 1111111111111111111111111111111111111111) echo 1 ;; 2222222222222222222222222222222222222222) echo 2 ;; *) echo "unknown commit $1" >&2; exit 2 ;; esac; }
-    b=$(pos "$base") h=$(pos "$head")
-    if [ "$h" -gt "$b" ]; then s=ahead; elif [ "$h" -lt "$b" ]; then s=behind; else s=identical; fi
-    q=""
-    for ((i = 1; i <= $#; i++)); do
-      if [ "${!i}" = --jq ]; then j=$((i + 1)); q=${!j}; fi
-    done
-    jq -n --arg s "$s" '{status: $s}' | jq -r "$q"
-    ;;
   "api --paginate")
     # Answers with the JSON GitHub would send and applies the caller's own
     # --jq to it, so the filter under test is the workflow's, not a copy.
@@ -444,6 +431,18 @@ release v1.0.0 false
 release v1.1.1 false
 report pass "$(exec_step "$SREPO" "$BURNED_STEP")" "after a release that shipped a burned tag"
 report "v1.1.2" "$(out burned)" "the shipped burned tag is not burned any more, a newer one is"
+report '^(v1\.1\.0|v1\.1\.2)$' "$(out ignore)" "both stay ignored as release boundaries"
+
+# An unreleased tag on a released tag's commit shipped nothing new, but must
+# not become the previous release either.
+sgit tag v1.2.0 v1.1.1
+fresh
+release v1.0.0 false
+release v1.1.1 false
+report pass "$(exec_step "$SREPO" "$BURNED_STEP")" "with an unreleased tag on a released commit"
+report "v1.1.2" "$(out burned)" "it is not named as burned"
+report '^(v1\.1\.0|v1\.1\.2|v1\.2\.0)$' "$(out ignore)" "but is ignored as a release boundary"
+sgit tag -d v1.2.0 > /dev/null
 
 fresh
 release v1.0.0 false
@@ -727,19 +726,44 @@ report 1 "$(caller_expr '.concurrency.group' | grep -c "'release-preview'")" "pu
 # --- release-draft.yml -------------------------------------------------------
 
 DRAFT="$(step release-draft.yml draft "Create or update draft release")"
+
+# The draft job reads tag ancestry from its checkout: main is OLDER, SHA, OTHER,
+# and a side branch forks off SHA. From here on the commits are real.
+DREPO="$TESTDIR/draftrepo"
+git -C "$TESTDIR" init -q -b main draftrepo
+dgit() { git -C "$DREPO" -c user.email=t@example.com -c user.name=T "$@"; }
+dgit commit -q --allow-empty -m "feat: older"
+OLDER=$(dgit rev-parse HEAD)
+dgit commit -q --allow-empty -m "feat: built"
+SHA=$(dgit rev-parse HEAD)
+dgit commit -q --allow-empty -m "feat: other"
+OTHER=$(dgit rev-parse HEAD)
+dgit update-ref refs/remotes/origin/main HEAD
+dgit checkout -q -b side "$SHA"
+dgit commit -q --allow-empty -m "feat: side"
+SIDE=$(dgit rev-parse HEAD)
+dtag() { # dtag <tag> <commit>: the tag in the checkout and in the API
+  dgit tag -f "$1" "$2" > /dev/null
+  echo "$2" > "$STATE/refs/$1"
+}
+dfresh() {
+  fresh
+  dgit tag -l | xargs -r git -C "$DREPO" tag -d > /dev/null
+}
 work() {
   mkdir -p "$STATE/work/release-notes"
   echo notes > "$STATE/work/release-notes/notes.md"
+  ln -sfn "$DREPO" "$STATE/work/repo"
   echo "$STATE/work"
 }
 draft() { # draft <version> <assets_artifact> [VAR=value...]: tag at $SHA unless set up otherwise
   local v=$1 a=$2
   shift 2
   [ -f "$STATE/refs/$v" ] || echo "$SHA" > "$STATE/refs/$v"
-  exec_step "$(work)" "$DRAFT" VERSION="$v" SHA="$SHA" ASSETS_ARTIFACT="$a" "$@"
+  exec_step "$(work)" "$DRAFT" VERSION="$v" SHA="$SHA" ASSETS_ARTIFACT="$a" DEFAULT_BRANCH=main "$@"
 }
 
-fresh
+dfresh
 assets bin/tool-linux-amd64 bin/tool-darwin-arm64 checksums.txt
 report pass "$(draft v1.2.0 release-assets)" "a new draft is created"
 report 1 "$(calls 'release create v1.2.0 --repo org/repo --draft --verify-tag')" \
@@ -748,29 +772,29 @@ report "tool-darwin-arm64 tool-linux-amd64 checksums.txt" "$(attached v1.2.0)" \
   "with every file of the artifact, flattened"
 report 1 "$(grep -c 'releases/tag/v1.2.0' "$GITHUB_STEP_SUMMARY")" "the summary links the draft"
 
-fresh
+dfresh
 report pass "$(draft v1.2.0 '')" "without assets, the draft has notes only"
 report "" "$(attached v1.2.0)" "and no files"
 
-fresh
+dfresh
 echo "$OTHER" > "$STATE/refs/v1.2.0"
 assets tool
 report fail "$(draft v1.2.0 release-assets)" "a tag that points elsewhere than the built commit fails"
 report 1 "$(grep -c "points at '$OTHER', not $SHA" "$STATE/log")" "naming both commits"
 report 0 "$(calls 'release \(create\|edit\|upload\)')" "and nothing is drafted"
 
-fresh
+dfresh
 assets tool
 report fail "$(exec_step "$(work)" "$DRAFT" VERSION=v1.2.0 SHA="$SHA" ASSETS_ARTIFACT=release-assets)" \
   "a missing tag fails"
 report 0 "$(calls 'release create')" "before a draft is created"
 
-fresh
+dfresh
 release v1.2.0-rc1 true
 report pass "$(draft v1.2.0-rc1 '')" "a prerelease draft is accepted"
 report 1 "$(calls 'release edit v1.2.0-rc1 .*--prerelease=true')" "and marked as a prerelease"
 
-fresh
+dfresh
 release v1.2.0 true tool-linux-amd64 stale-from-v4.tar.gz
 assets tool-linux-amd64 tool-darwin-arm64
 report pass "$(draft v1.2.0 release-assets)" "a re-run updates the existing draft"
@@ -778,24 +802,24 @@ report 0 "$(calls 'release create')" "instead of creating another"
 report 1 "$(calls 'release upload v1.2.0 --repo org/repo --clobber')" "replacing assets of the same name"
 report "tool-linux-amd64 tool-darwin-arm64" "$(attached v1.2.0)" "and dropping assets this build did not make"
 
-fresh
+dfresh
 release v1.2.0 false tool-linux-amd64
 assets tool-linux-amd64
 report fail "$(draft v1.2.0 release-assets)" "a published release fails"
 report 0 "$(calls 'release \(create\|edit\|upload\|delete-asset\)')" "and is left untouched"
 
-fresh
+dfresh
 release v1.2.0 true tool
 assets tool
 report fail "$(draft v1.2.0 release-assets VIEW_FAIL=1)" "a failed release lookup fails"
 report 0 "$(calls 'release create')" "instead of being taken for a missing release"
 
-fresh
+dfresh
 mkdir -p "$STATE/work/release-assets"
 report fail "$(draft v1.2.0 release-assets)" "an empty asset artifact fails"
 report 0 "$(calls 'release create')" "before any draft exists"
 
-fresh
+dfresh
 assets linux/tool darwin/tool
 report fail "$(draft v1.2.0 release-assets)" "two files with the same name fail"
 report 1 "$(grep -c 'several files named: tool' "$STATE/log")" "naming the clash"
@@ -810,7 +834,7 @@ done
 
 # Against an existing draft: a name with a newline splits into two valid
 # lines ("My", "App.zip") unless each name is checked whole.
-fresh
+dfresh
 release v1.2.0 true tool
 assets $'My\nApp.zip'
 report fail "$(draft v1.2.0 release-assets)" "a file name with a newline fails on a re-run"
@@ -818,7 +842,7 @@ report 1 "$(grep -c "would rename: \$'My\\\\nApp.zip'" "$STATE/log")" "naming it
 report 0 "$(calls 'release \(edit\|upload\|delete-asset\)')" "and the draft is left untouched"
 report "tool" "$(attached v1.2.0)" "with its assets"
 
-fresh
+dfresh
 release v1.2.0 true tool_v1.2.0-linux.tar.gz
 assets tool_v1.2.0-linux.tar.gz
 report pass "$(draft v1.2.0 release-assets)" "a name of letters, digits, . _ and - is kept"
@@ -826,39 +850,51 @@ report "tool_v1.2.0-linux.tar.gz" "$(attached v1.2.0)" "and not deleted as stale
 
 # Overtaken: run A tagged v1.2.0 and failed; run B then cut v1.2.1. A re-run
 # of A's failed jobs reaches the draft job with v1.2.0.
-fresh
-echo "$SHA" > "$STATE/refs/v1.2.1"
+dfresh
+dtag v1.2.1 "$SHA"
 report fail "$(draft v1.2.0 '')" "a re-run overtaken by a newer tag is not drafted"
 report 1 "$(grep -c 'v1.2.0 was superseded: v1.2.1' "$STATE/log")" "naming the newer tag"
 report 0 "$(calls 'release create')" "and no draft is created"
 
-fresh
+dfresh
 release v1.2.1 true
 report fail "$(draft v1.2.0 '')" "a pending draft blocks drafting another"
 report 0 "$(calls 'release create')" "and no draft is created"
 
-fresh
-echo "$SHA" > "$STATE/refs/v1.2.0-rc1"
-echo "$SHA" > "$STATE/refs/v1.1.9"
+dfresh
+dtag v1.2.0-rc1 "$SHA"
+dtag v1.1.9 "$SHA"
 report pass "$(draft v1.2.0 '')" "older tags and own prereleases do not count as newer"
 
-fresh
-echo "$SHA" > "$STATE/refs/v1.2.0"
+dfresh
+dtag v1.2.0 "$SHA"
 report fail "$(draft v1.2.0-rc1 '')" "a prerelease is overtaken by its final version"
 
-fresh
-echo "$OTHER" > "$STATE/refs/v1.2.1"
+dfresh
+dtag v1.2.1 "$OTHER"
 report fail "$(draft v1.2.0 '')" "a newer tag on a later commit overtakes"
 
 # A mistaken explicit v2.0.0 was tagged and abandoned; the next run cut v1.1.1.
-fresh
-echo "$OLDER" > "$STATE/refs/v2.0.0"
+dfresh
+dtag v2.0.0 "$OLDER"
 report pass "$(draft v1.1.1 '')" "a higher tag on an earlier commit does not overtake"
 report 1 "$(calls 'release create v1.1.1')" "and the draft is created"
 
-fresh
-echo "$OTHER" > "$STATE/refs/v1.1.1"
+dfresh
+dtag v1.1.1 "$OTHER"
 report fail "$(draft v2.0.0 '')" "a lower tag on a later commit overtakes"
 report 1 "$(grep -c 'v2.0.0 was superseded: v1.1.1' "$STATE/log")" "naming it"
+
+# Anyone with write access can tag a branch that forked off after SHA.
+dfresh
+dtag v1.3.0-test "$SIDE"
+report pass "$(draft v1.2.0 '')" "a tag off the default branch does not overtake"
+report 1 "$(calls 'release create v1.2.0')" "and the draft is created"
+
+dfresh
+echo 4444444444444444444444444444444444444444 > "$STATE/refs/v1.2.0"
+report fail "$(draft v1.2.0 '' SHA=4444444444444444444444444444444444444444)" \
+  "a built commit missing from the checkout fails"
+report 1 "$(grep -c 'is not in the checkout of main' "$STATE/log")" "saying so"
 
 exit "$fail"
