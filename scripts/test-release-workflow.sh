@@ -489,6 +489,35 @@ report pass "$(exec_step "$BREPO" "$VERSION_STEP" INPUT_VERSION= COMPUTED_VERSIO
   "a dry run on such a commit goes on"
 report 1 "$(grep -c '::warning::.*already carries v1.1.0' "$STATE/log")" "with a warning"
 
+# A second version on a released commit must rank above the ones there.
+HREPO="$TESTDIR/here"
+git -C "$TESTDIR" init -q -b main here
+hgit() { git -C "$HREPO" -c user.email=t@example.com -c user.name=T "$@"; }
+hgit commit -q --allow-empty -m "feat: a"
+hgit tag v1.0.0-rc2
+here_version() { # here_version <version> [VAR=value...]
+  exec_step "$HREPO" "$VERSION_STEP" INPUT_VERSION="$1" COMPUTED_VERSION= "${@:2}"
+}
+
+fresh
+report pass "$(here_version v1.0.0)" "a final version on its released prerelease's commit passes"
+
+hgit tag v1.1.0
+fresh
+report fail "$(here_version v1.0.1)" "a lower version on a commit with a released higher one fails"
+report 1 "$(grep -c 'already carries v1.1.0, which ranks above v1.0.1' "$STATE/log")" "naming it"
+report 0 "$(grep -c '^version=' "$GITHUB_OUTPUT")" "and no version is put out"
+
+fresh
+report fail "$(here_version v1.1.0-rc3)" "so does a prerelease of the version there"
+
+fresh
+report pass "$(here_version v1.0.1 DRY_RUN=true)" "a dry run of it goes on"
+report 1 "$(grep -c '::warning::.*which ranks above v1.0.1' "$STATE/log")" "with a warning"
+
+fresh
+report pass "$(here_version v1.2.0)" "a higher version on that commit passes"
+
 # Dispatching from a tag: main is A (v1.0.0-rc1, v1.0.0-rc2) then B (v1.1.0).
 GUARD="$(step release.yml prepare "Guard - releases are cut from the default branch")"
 GREPO="$TESTDIR/fromtag"
@@ -568,6 +597,10 @@ report "v2.0.0-alpha.9 v2.0.0-beta v2.0.0-rc2" "$(out unreleased_here)" "the one
 fresh
 report pass "$(exec_step "$BREPO" "$BURNED_STEP")" "a commit without version tags"
 report "" "$(out unreleased_here)" "reports none (vnext is not a version)"
+
+# Burned tags that a version can run into are on earlier commits: on this one
+# they would have been refused as unreleased tags.
+git -C "$PREPO" -c user.email=t@example.com -c user.name=T commit -q --allow-empty -m "fix: b"
 
 fresh
 report pass "$(exec_step "$PREPO" "$VERSION_STEP" INPUT_VERSION= COMPUTED_VERSION=v2.0.0-rc1)" \

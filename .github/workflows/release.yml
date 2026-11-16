@@ -389,6 +389,29 @@ jobs:
             exit 1
           fi
 
+          # A second version on a commit must rank above those already there
+          # (promoting a prerelease, say): the draft job orders tags on one
+          # commit by version. The unreleased ones were refused above.
+          # sort -V ranks v1.2.0-rc1 above v1.2.0; a ~ sorts below anything.
+          semver_key() { sed -E 's/^(v[0-9]+\.[0-9]+\.[0-9]+)-/\1~/'; }
+          above=()
+          while IFS= read -r tag; do
+            [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]] || continue
+            top=$(printf '%s\n%s\n' "$version" "$tag" | semver_key | sort -V | tail -1)
+            if [ "$top" = "$(semver_key <<< "$tag")" ]; then
+              above+=("$tag")
+            fi
+          done < <(git tag --points-at HEAD --list 'v*')
+          if [ ${#above[@]} -gt 0 ]; then
+            msg="${release_sha} already carries ${above[*]}, which ranks above ${version}. A further version on this commit must rank higher."
+            if [ "${DRY_RUN:-}" = "true" ]; then
+              echo "::warning::${msg}"
+            else
+              echo "::error::${msg}"
+              exit 1
+            fi
+          fi
+
           echo "Releasing ${version} from ${release_sha}."
           {
             echo "version=${version}"
