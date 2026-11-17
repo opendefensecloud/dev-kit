@@ -650,7 +650,7 @@ See [`.github/workflows/release-self.yml`](.github/workflows/release-self.yml) f
 
 #### Required checks
 
-`required_checks` names the check runs, as shown on the commit, that must have passed on the released commit itself before it is tagged. A check that failed, is still running, was skipped or never ran blocks the release; a dry run only reports it. Typically these are the e2e jobs.
+`required_checks` names the check runs, as shown on the commit, that must have passed on the released commit itself before it is tagged. A check that failed, is still running, was skipped or never ran blocks the release; a dry run only reports it. A name with several runs on the commit (the same workflow also triggered by `release` or `schedule`, say) must have passed in all of them. Typically these are the e2e jobs.
 
 The required checks must run on every push to the default branch: drop `paths-ignore` from the push trigger of the workflow running them (keeping it on `pull_request` is fine), and don't require a job that a condition can skip. Otherwise a documentation-only commit can never be released.
 

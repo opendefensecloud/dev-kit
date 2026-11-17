@@ -440,15 +440,20 @@ jobs:
           runs=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${SHA}/check-runs?per_page=100" \
             --jq '.check_runs[] | [.name, .status, (.conclusion // "")] | @tsv')
 
-          bad=()
+          # A name can have several runs on the commit, one per workflow run
+          # (push, release, schedule): all of them must have passed.
+          bad=() hint=""
           for name in "${required[@]}"; do
-            states=$(awk -F'\t' -v n="$name" '$1 == n { print $2 "/" $3 }' <<< "$runs" | sort -u)
+            states=$(awk -F'\t' -v n="$name" '$1 == n { print $2 "/" $3 }' <<< "$runs" | sort -u | paste -sd, -)
             if [ "$states" != "completed/success" ]; then
               bad+=("${name}: ${states:-missing}")
+              if [ -z "$states" ] || [[ "$states" == *skipped* ]]; then
+                hint=" A check that skips some pushes to the default branch (paths-ignore, a job condition) cannot be required."
+              fi
             fi
           done
           if [ ${#bad[@]} -gt 0 ]; then
-            fail "Required checks on ${SHA} have not passed: $(IFS=';'; echo "${bad[*]}"). A check that skips some pushes to the default branch (paths-ignore) cannot be required."
+            fail "Required checks on ${SHA} have not passed: $(IFS=';'; echo "${bad[*]}").${hint}"
           fi
           echo "Required checks passed on ${SHA}."
 

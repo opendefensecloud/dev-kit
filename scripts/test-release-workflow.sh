@@ -321,6 +321,18 @@ fresh
 checks "$C_CODE" "e2e / api:completed/success"
 report fail "$(gate "$C_CODE")" "a required check that never ran blocks"
 report 1 "$(grep -c 'e2e / ui: missing' "$STATE/log")" "naming it as missing"
+report 1 "$(grep -c 'cannot be required' "$STATE/log")" "with the hint about checks that skip pushes"
+
+# Two runs of one name, as with a second workflow run on the commit.
+fresh
+checks "$C_CODE" "e2e / api:completed/success" "e2e / ui:completed/success" "e2e / ui:completed/failure"
+report fail "$(gate "$C_CODE")" "a required check with a failed second run blocks"
+report 1 "$(grep -c '::error::.*e2e / ui: completed/failure,completed/success' "$STATE/log")" "naming both states on one line"
+report 0 "$(grep -c 'cannot be required' "$STATE/log")" "without the hint about checks that skip pushes"
+
+fresh
+checks "$C_CODE" "e2e / api:completed/success" "e2e / ui:completed/success" "e2e / ui:completed/success"
+report pass "$(gate "$C_CODE")" "a required check that passed in every run passes"
 
 fresh
 checks "$C_CODE" "e2e / api:completed/success" "e2e / ui:completed/success"
