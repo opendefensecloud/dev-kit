@@ -650,9 +650,9 @@ See [`.github/workflows/release-self.yml`](.github/workflows/release-self.yml) f
 
 #### Required checks
 
-`required_checks` names the check runs, as shown on the commit, that must have passed before a commit is tagged. A check that failed, is still running, was skipped or never ran blocks the release; a dry run only reports it. Typically these are the e2e jobs that run on every push to the default branch.
+`required_checks` names the check runs, as shown on the commit, that must have passed on the released commit itself before it is tagged. A check that failed, is still running, was skipped or never ran blocks the release; a dry run only reports it. Typically these are the e2e jobs.
 
-Those jobs usually skip documentation-only pushes (`paths-ignore`). Set `checks_skip_paths` to the same globs (default `["docs/**", "**/*.md"]`). They match as in GitHub's path filters: `*` stops at a `/`, `**` crosses it, and a leading `**/` also matches at the top level; `?`, `+`, `[]` and `!` are refused. A commit without the checks is then released on those of the nearest earlier commit that ran them, but only if every change since that commit matches `checks_skip_paths`. A code commit whose checks have not started yet therefore fails the run instead of being released on an older result. Use `'[]'` when the checks run on every push.
+The required checks must run on every push to the default branch: drop `paths-ignore` from the push trigger of the workflow running them (keeping it on `pull_request` is fine), and don't require a job that a condition can skip. Otherwise a documentation-only commit can never be released.
 
 #### Attaching release assets
 
@@ -717,7 +717,7 @@ Every file in the artifact becomes one release asset, so file names must be uniq
 
 1. **Protect release tags and delete every draft release** first. Run `make repo-settings` as an admin with this version of dev-kit; v5 refuses to tag without `protect-release-tags`. A v4 draft has no tag and points at whichever commit the last push run left it on; publishing it would ship its old assets. v5 refuses to release while one exists.
 2. Drop inputs `create_tag` and `retry_assets_for` and output `draft_updated` from the caller, including any `run-name` that refers to them, and any tag trigger: runs from a tag are refused.
-3. Pass `dry_run: true` on push, use the concurrency block above, grant `checks: read`, set `required_checks` (and `checks_skip_paths` if they differ from the default), and add the `draft` job.
+3. Pass `dry_run: true` on push, use the concurrency block above, grant `checks: read`, set `required_checks`, and add the `draft` job. Drop `paths-ignore` from the push trigger of the workflow running the required checks.
 4. With assets: upload them as an artifact from a job between the two calls instead of to the release.
 
 ## Design Decisions

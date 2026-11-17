@@ -267,8 +267,7 @@ report 1 "$(grep -c '^releasable=true$' "$GITHUB_OUTPUT")" "and sets releasable=
 
 GATE="$(step release.yml prepare "Guard - required checks passed")"
 
-# History: code (checks ran) -> docs/ -> top-level README.md -> code (no checks
-# yet, as when its workflow is still queued).
+# History: code (checks ran) -> docs/ (no checks, as with paths-ignore).
 GREPO="$TESTDIR/gate"
 mkdir -p "$GREPO/docs"
 git -C "$GREPO" init -q -b main
@@ -280,8 +279,6 @@ gcommit() { # gcommit <file>: commits a change to it, prints the commit
 }
 C_CODE=$(gcommit main.go)
 C_DOCS=$(gcommit docs/guide.md)
-C_README=$(gcommit README.md)
-C_LATE=$(gcommit server.go)
 
 checks() { # checks <commit> <name>:<status>/<conclusion>...: its check runs
   local c=$1 spec
@@ -295,11 +292,11 @@ E2E='["e2e / api", "e2e / ui"]'
 gate() { # gate <commit> [VAR=value...]
   local c=$1
   shift
-  exec_step "$GREPO" "$GATE" SHA="$c" REQUIRED_CHECKS="$E2E" SKIP_PATHS='["docs/**", "**/*.md"]' DRY_RUN=false "$@"
+  exec_step "$GREPO" "$GATE" SHA="$c" REQUIRED_CHECKS="$E2E" DRY_RUN=false "$@"
 }
 
 fresh
-report pass "$(exec_step "$GREPO" "$GATE" SHA="$C_CODE" REQUIRED_CHECKS='[]' SKIP_PATHS='[]' DRY_RUN=false)" \
+report pass "$(exec_step "$GREPO" "$GATE" SHA="$C_CODE" REQUIRED_CHECKS='[]' DRY_RUN=false)" \
   "no required checks: nothing to wait for"
 report 0 "$(calls 'check-runs')" "and no lookup"
 
@@ -327,32 +324,9 @@ report 1 "$(grep -c 'e2e / ui: missing' "$STATE/log")" "naming it as missing"
 
 fresh
 checks "$C_CODE" "e2e / api:completed/success" "e2e / ui:completed/success"
-report pass "$(gate "$C_DOCS")" "a docs/ commit is released on the checks of the commit before"
-report 1 "$(grep -c "using that commit's checks" "$STATE/log")" "and says so"
-report pass "$(gate "$C_README")" "so is a top-level *.md change (**/ matches the top level)"
-report pass "$(gate "$C_DOCS" SKIP_PATHS='["docs/*"]')" "docs/* matches a file directly in docs/"
-report fail "$(gate "$C_DOCS" SKIP_PATHS='["*.md"]')" "*.md does not match docs/guide.md: * stops at a / as in paths-ignore"
-report fail "$(gate "$C_DOCS" SKIP_PATHS='["*"]')" "nor does *"
-report pass "$(gate "$C_README" SKIP_PATHS='["*.md", "docs/*"]')" "*.md matches a top-level README.md"
-report fail "$(gate "$C_README" SKIP_PATHS='["*.md"]')" "but not the docs/guide.md before it, which the gate also covers"
-report pass "$(gate "$C_DOCS" SKIP_PATHS='["**/guide.md"]')" "**/ crosses directories"
-report pass "$(gate "$C_DOCS" SKIP_PATHS='["docs/guide.md"]')" "a literal path, its . taken literally"
-report fail "$(gate "$C_DOCS" SKIP_PATHS='["docs/guide-md"]')" "a literal path does not match another"
-report fail "$(gate "$C_DOCS" SKIP_PATHS='["docs/guide.m?"]')" "an unsupported wildcard fails"
-report 1 "$(grep -c 'supports only \* and \*\* wildcards, got: docs/guide.m?' "$STATE/log")" "naming the pattern"
-
-fresh
-checks "$C_CODE" "e2e / api:completed/success" "e2e / ui:completed/success"
-report fail "$(gate "$C_LATE")" "a code commit whose checks have not started is not released on older ones"
-report 1 "$(grep -c 'server.go changed since' "$STATE/log")" "naming the change"
-
-fresh
-checks "$C_CODE" "e2e / api:completed/success" "e2e / ui:completed/success"
-report fail "$(gate "$C_DOCS" SKIP_PATHS='[]')" "without skip paths, a commit without checks blocks"
-
-fresh
-checks "$C_CODE" "e2e / api:completed/failure" "e2e / ui:completed/success"
-report fail "$(gate "$C_DOCS")" "a docs commit after a red commit blocks"
+report fail "$(gate "$C_DOCS")" "a commit without the checks is not released on its parent's"
+report 1 "$(grep -c 'e2e / api: missing;e2e / ui: missing' "$STATE/log")" "naming both as missing"
+report 0 "$(calls "commits/${C_CODE}/check-runs")" "and the parent is not looked at"
 
 fresh
 checks "$C_CODE" "e2e / api:completed/success" "e2e / ui:in_progress/"
@@ -361,7 +335,7 @@ report 1 "$(grep -c '::notice::Not releasable yet' "$STATE/log")" "as a notice"
 
 fresh
 report fail "$(gate "$C_CODE" REQUIRED_CHECKS='"e2e"')" "required_checks that is not a JSON array fails"
-report fail "$(gate "$C_CODE" SKIP_PATHS='[""]')" "an empty skip path fails"
+report fail "$(gate "$C_CODE" REQUIRED_CHECKS='[""]')" "an empty check name fails"
 
 # --- release.yml: burned tags, version and notes -----------------------------
 

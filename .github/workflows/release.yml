@@ -34,15 +34,10 @@ on:
         type: string
         default: '.release-tooling/cliff.toml'
       required_checks:
-        description: 'JSON array of check-run names that must have passed on the released commit before it is tagged, e.g. ["test-e2e / test-e2e"].'
+        description: 'JSON array of check-run names that must have passed on the released commit before it is tagged, e.g. ["test-e2e / test-e2e"]. They must run on every push to the default branch.'
         required: false
         type: string
         default: '[]'
-      checks_skip_paths:
-        description: 'JSON array of path globs whose changes do not run the required checks (the paths-ignore of the workflow that runs them). A commit touching only these may be released on the checks of the commit before it.'
-        required: false
-        type: string
-        default: '["docs/**", "**/*.md"]'
     outputs:
       version:
         description: 'The computed/released version.'
@@ -405,60 +400,23 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # A commit is tagged only once its required checks (e2e, typically) have
-      # passed on it. A commit that only touches checks_skip_paths runs no such
-      # checks; it is released on those of the nearest earlier commit that
-      # ran them, as long as everything since then is skippable too. A code
-      # commit whose checks have not started yet therefore fails here rather
-      # than being released on an older commit's result.
+      # passed on that very commit. Checks that skip some pushes (paths-ignore)
+      # never qualify such a commit; another commit's result does not stand in.
       - name: Guard - required checks passed
         if: ${{ steps.releasable.outputs.releasable != 'false' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SHA: ${{ steps.version.outputs.sha }}
           REQUIRED_CHECKS: ${{ inputs.required_checks }}
-          SKIP_PATHS: ${{ inputs.checks_skip_paths }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
 
-          for json in "$REQUIRED_CHECKS" "$SKIP_PATHS"; do
-            if ! jq -e 'type == "array" and all(.[]; type == "string" and length > 0)' <<< "$json" > /dev/null 2>&1; then
-              echo "::error::required_checks and checks_skip_paths must be JSON arrays of non-empty strings, got: ${json}"
-              exit 1
-            fi
-          done
-
+          if ! jq -e 'type == "array" and all(.[]; type == "string" and length > 0)' <<< "$REQUIRED_CHECKS" > /dev/null 2>&1; then
+            echo "::error::required_checks must be a JSON array of non-empty strings, got: ${REQUIRED_CHECKS}"
+            exit 1
+          fi
           mapfile -t required < <(jq -r '.[]' <<< "$REQUIRED_CHECKS")
-          mapfile -t skip < <(jq -r '.[]' <<< "$SKIP_PATHS")
-
-          # checks_skip_paths must match what the checks' paths-ignore
-          # matches, or an unchecked commit is released on older checks. As in
-          # GitHub's path filters, * stops at a /, ** crosses it and a **/
-          # also matches at the top level. The rest of GitHub's syntax (? + []
-          # !) is refused rather than approximated.
-          skip_re=()
-          for p in "${skip[@]}"; do
-            if [[ "$p" == *[?+\[\]\!]* ]]; then
-              echo "::error::checks_skip_paths supports only * and ** wildcards, got: ${p}"
-              exit 1
-            fi
-            re="" g=$p
-            while [ -n "$g" ]; do
-              case "$g" in
-                '**/'*) re+='(.*/)?' g=${g#'**/'} ;;
-                '**'*) re+='.*' g=${g#'**'} ;;
-                '*'*) re+='[^/]*' g=${g#'*'} ;;
-                *)
-                  c=${g:0:1} g=${g:1}
-                  case "$c" in
-                    . | '^' | '$' | '(' | ')' | '|' | '{' | '}' | "\\") re+="\\${c}" ;;
-                    *) re+=$c ;;
-                  esac
-                  ;;
-              esac
-            done
-            skip_re+=("^${re}\$")
-          done
 
           if [ ${#required[@]} -eq 0 ]; then
             echo "No required_checks configured."
@@ -479,45 +437,8 @@ jobs:
           # Every check run on the commit as "name<TAB>status<TAB>conclusion".
           # The API returns the latest run per check, so a re-run that passed
           # replaces the failure it re-ran.
-          check_runs() {
-            gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/$1/check-runs?per_page=100" \
-              --jq '.check_runs[] | [.name, .status, (.conclusion // "")] | @tsv'
-          }
-
-          skippable() {
-            local re
-            for re in "${skip_re[@]}"; do
-              if [[ $1 =~ $re ]]; then
-                return 0
-              fi
-            done
-            return 1
-          }
-
-          # Walk back along the default branch to the newest commit that ran
-          # any of the required checks.
-          base="" runs=""
-          for commit in $(git rev-list --first-parent --max-count=50 "$SHA"); do
-            runs=$(check_runs "$commit")
-            for name in "${required[@]}"; do
-              if cut -f1 <<< "$runs" | grep -qxF -- "$name"; then
-                base=$commit
-                break 2
-              fi
-            done
-          done
-          if [ -z "$base" ]; then
-            fail "None of ${REQUIRED_CHECKS} ran on ${SHA} or the 49 commits before it."
-          fi
-
-          if [ "$base" != "$SHA" ]; then
-            while IFS= read -r f; do
-              if ! skippable "$f"; then
-                fail "${SHA} has no ${REQUIRED_CHECKS} yet, and ${f} changed since ${base}, the last commit that ran them. Wait for the checks to finish, then run again."
-              fi
-            done < <(git diff --no-renames --name-only "$base" "$SHA")
-            echo "${SHA} only changes checks_skip_paths since ${base}; using that commit's checks."
-          fi
+          runs=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${SHA}/check-runs?per_page=100" \
+            --jq '.check_runs[] | [.name, .status, (.conclusion // "")] | @tsv')
 
           bad=()
           for name in "${required[@]}"; do
@@ -527,9 +448,9 @@ jobs:
             fi
           done
           if [ ${#bad[@]} -gt 0 ]; then
-            fail "Required checks on ${base} have not passed: $(IFS=';'; echo "${bad[*]}")."
+            fail "Required checks on ${SHA} have not passed: $(IFS=';'; echo "${bad[*]}"). A check that skips some pushes to the default branch (paths-ignore) cannot be required."
           fi
-          echo "Required checks passed on ${base}."
+          echo "Required checks passed on ${SHA}."
 
       - name: Render release notes
         if: ${{ steps.releasable.outputs.releasable != 'false' }}

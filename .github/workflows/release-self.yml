@@ -45,7 +45,6 @@ jobs:
       force: ${{ github.event_name == 'workflow_dispatch' && inputs.force }}
       # lint (make fmt + make lint) runs on every push to main, unfiltered.
       required_checks: '["lint"]'
-      checks_skip_paths: '[]'
 
   draft:
     needs: release
