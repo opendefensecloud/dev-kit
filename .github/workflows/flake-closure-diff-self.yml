@@ -1,4 +1,4 @@
-name: flake-closure-diff
+name: flake-closure-diff (self)
 
 # dev-kit calling its own reusable workflow, the way a consumer calls it. The
 # reference is local: it always exercises the version in the branch and needs no
