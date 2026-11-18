@@ -215,6 +215,11 @@ else
        bypass_actors: [] }')"
 fi
 
+echo "  Configuring merge commit settings..."
+"$GH" api "repos/$REPO" -X PATCH \
+  -f merge_commit_title=PR_TITLE \
+  -f merge_commit_message=PR_BODY > /dev/null
+
 # Immutable releases: once a release is published, its assets and its tag are
 # frozen. Title and notes stay editable. Never switched off from here: an
 # organization may enforce it, and switching it off is not a routine change.
@@ -223,13 +228,16 @@ if [ "$REPO_IMMUTABLE_RELEASES" = "false" ]; then
 else
   echo "  Enabling immutable releases..."
   # GitHub answers 404 while the setting is off. Any other failure stops the
-  # run instead of being read as "off".
-  if state=$("$GH" api "repos/$REPO/immutable-releases" 2>&1); then
+  # run instead of being read as "off". stderr is kept apart: with GH_DEBUG gh
+  # traces there, also on success.
+  err=$(mktemp)
+  trap 'rm -f "$err"' EXIT
+  if state=$("$GH" api "repos/$REPO/immutable-releases" 2> "$err"); then
     immutable=$(echo "$state" | "$JQ" -r .enabled)
-  elif grep -q "HTTP 404" <<< "$state"; then
+  elif grep -q "HTTP 404" "$err"; then
     immutable=false
   else
-    echo "error: reading the immutable releases setting failed: $state" >&2
+    echo "error: reading the immutable releases setting failed: $(cat "$err")" >&2
     exit 1
   fi
   if [ "$immutable" = "true" ]; then
@@ -242,10 +250,5 @@ else
     echo "    Enabled"
   fi
 fi
-
-echo "  Configuring merge commit settings..."
-"$GH" api "repos/$REPO" -X PATCH \
-  -f merge_commit_title=PR_TITLE \
-  -f merge_commit_message=PR_BODY > /dev/null
 
 echo "Done."

@@ -41,7 +41,7 @@ case "$1" in
         ;;
       "GET repos/org/repo/immutable-releases")
         case "${IMMUTABLE:-off}" in
-          on) echo '{"enabled":true,"enforced_by_owner":false}' ;;
+          on) echo '{"enabled":true,"enforced_by_owner":false}'; [ -z "${GH_TRACE:-}" ] || echo "* Request at ..." >&2 ;;
           off) echo '{"message":"Not Found"}'; echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
           *) echo "gh: Bad Gateway (HTTP 502)" >&2; exit 1 ;;
         esac
@@ -143,7 +143,7 @@ report '"protect-main"' "$(sent POST-protect-main .name)" "and still applies the
 rc=0
 ENFORCEMENT=enabled run || rc=$?
 report 1 "$rc" "an unknown enforcement fails the run"
-report 0 "$(grep -c -- ' -X ' "$STATE/calls")" "before anything is changed"
+report 0 "$(grep -cE -- ' -X |^gh label ' "$STATE/calls")" "before anything is changed"
 
 # --- immutable releases ---------------------------------------------------------
 enabled() { [ -e "$STATE/immutable-releases-enabled" ] && echo yes || echo no; }
@@ -153,6 +153,14 @@ report yes "$(enabled)" "immutable releases are enabled where they are off"
 
 IMMUTABLE=on run
 report no "$(enabled)" "and left alone where they are on"
+
+rc=0
+IMMUTABLE=on GH_TRACE=1 run || rc=$?
+report 0 "$rc" "a trace gh writes to stderr is not read as the setting"
+
+rc=0
+IMMUTABLE=broken run || rc=$?
+report 1 "$(grep -c "merge_commit_title=PR_TITLE" "$STATE/calls")" "the settings before it are applied even when its lookup fails"
 
 RELEASES=false run
 report no "$(enabled)" "REPO_IMMUTABLE_RELEASES=false does not enable them"
@@ -170,7 +178,7 @@ report 1 "$rc" "a refused enabling fails the run"
 rc=0
 RELEASES=yes run || rc=$?
 report 1 "$rc" "a REPO_IMMUTABLE_RELEASES other than true or false fails the run"
-report 0 "$(grep -c -- " -X " "$STATE/calls")" "before anything is changed"
+report 0 "$(grep -cE -- ' -X |^gh label ' "$STATE/calls")" "before anything is changed"
 
 # Every REPO_* variable the script documents needs a default in common.mk and
 # must be passed by the make target; set -u fails the script otherwise.
