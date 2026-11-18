@@ -10,6 +10,8 @@ trap 'rm -rf "$TESTDIR"' EXIT
 # State: $STATE/existing holds "<id> <name>" per repository ruleset; each
 # create or update is saved as $STATE/sent/<METHOD>-<name>.json. The ruleset
 # named in $REJECT is refused the way GitHub refuses one, with a 422 body.
+# $IMMUTABLE is the immutable releases setting GitHub reports: off (the default),
+# on, or anything else for a failing lookup. $ENABLE_FAIL refuses enabling it.
 mkdir -p "$TESTDIR/bin"
 cat > "$TESTDIR/bin/gh" << 'GH'
 #!/usr/bin/env bash
@@ -36,6 +38,17 @@ case "$1" in
         [ -z "${LOOKUP_FAIL:-}" ] || { echo "HTTP 502" >&2; exit 1; }
         name=$(sed -E 's/.*name=="([^"]+)".*/\1/' <<< "$query")
         awk -v n="$name" '$2 == n { print $1 }' "$STATE/existing"
+        ;;
+      "GET repos/org/repo/immutable-releases")
+        case "${IMMUTABLE:-off}" in
+          on) echo '{"enabled":true,"enforced_by_owner":false}' ;;
+          off) echo '{"message":"Not Found"}'; echo "gh: Not Found (HTTP 404)" >&2; exit 1 ;;
+          *) echo "gh: Bad Gateway (HTTP 502)" >&2; exit 1 ;;
+        esac
+        ;;
+      "PUT repos/org/repo/immutable-releases")
+        [ -z "${ENABLE_FAIL:-}" ] || { echo "gh: Conflict (HTTP 409)" >&2; exit 1; }
+        : > "$STATE/immutable-releases-enabled"
         ;;
       "GET "*) echo "unexpected lookup: $path" >&2; exit 2 ;;
       "PUT repos/org/repo/rulesets/"* | "POST repos/org/repo/rulesets")
@@ -83,6 +96,7 @@ run() { # run [<id> <name>]...: runs repo-settings.sh with those rulesets presen
     REPO_ALLOW_MERGE_COMMIT=true REPO_ALLOW_SQUASH_MERGE=false REPO_ALLOW_REBASE_MERGE=false \
     REPO_REQUIRE_LAST_PUSH_APPROVAL=false \
     REPO_RELEASE_TAGS="${TAGS-$DEFAULT_TAGS}" REPO_RELEASE_TAGS_ENFORCEMENT="${ENFORCEMENT-active}" \
+    REPO_IMMUTABLE_RELEASES="${RELEASES-true}" \
     bash "$ROOT/scripts/repo-settings.sh" > "$STATE/log" 2>&1
 }
 
@@ -130,6 +144,33 @@ rc=0
 ENFORCEMENT=enabled run || rc=$?
 report 1 "$rc" "an unknown enforcement fails the run"
 report 0 "$(grep -c -- ' -X ' "$STATE/calls")" "before anything is changed"
+
+# --- immutable releases ---------------------------------------------------------
+enabled() { [ -e "$STATE/immutable-releases-enabled" ] && echo yes || echo no; }
+
+run
+report yes "$(enabled)" "immutable releases are enabled where they are off"
+
+IMMUTABLE=on run
+report no "$(enabled)" "and left alone where they are on"
+
+RELEASES=false run
+report no "$(enabled)" "REPO_IMMUTABLE_RELEASES=false does not enable them"
+report 0 "$(grep -c immutable-releases "$STATE/calls")" "and does not look the setting up"
+
+rc=0
+IMMUTABLE=broken run || rc=$?
+report 1 "$rc" "a failed lookup of the setting fails the run"
+report no "$(enabled)" "and is not read as off"
+
+rc=0
+ENABLE_FAIL=1 run || rc=$?
+report 1 "$rc" "a refused enabling fails the run"
+
+rc=0
+RELEASES=yes run || rc=$?
+report 1 "$rc" "a REPO_IMMUTABLE_RELEASES other than true or false fails the run"
+report 0 "$(grep -c -- " -X " "$STATE/calls")" "before anything is changed"
 
 # Every REPO_* variable the script documents needs a default in common.mk and
 # must be passed by the make target; set -u fails the script otherwise.

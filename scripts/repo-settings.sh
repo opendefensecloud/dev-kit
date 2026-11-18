@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Reconcile a repository's GitHub settings: labels, merge strategy, secret
-# scanning, branch protection ruleset and release tag ruleset.
+# scanning, branch protection ruleset, release tag ruleset and immutable releases.
 #
 # All configuration is passed through environment variables. Defaults are the
 # single source of truth in common.mk and are always passed by the make target;
@@ -20,6 +20,7 @@ set -euo pipefail
 #   REPO_REQUIRE_LAST_PUSH_APPROVAL        require the most recent push to be approved before merging
 #   REPO_RELEASE_TAGS                      JSON array of tag patterns nobody may move or delete; [] skips
 #   REPO_RELEASE_TAGS_ENFORCEMENT          that ruleset's enforcement: active, evaluate or disabled
+#   REPO_IMMUTABLE_RELEASES                when "true", enable immutable releases; "false" leaves the setting alone
 #   GH, JQ                                 commands used to talk to GitHub and build JSON
 
 "$GH" auth status > /dev/null 2>&1 || {
@@ -46,6 +47,14 @@ case "$REPO_RELEASE_TAGS_ENFORCEMENT" in
   active | evaluate | disabled) ;;
   *)
     echo "error: REPO_RELEASE_TAGS_ENFORCEMENT must be active, evaluate or disabled, got '$REPO_RELEASE_TAGS_ENFORCEMENT'" >&2
+    exit 1
+    ;;
+esac
+
+case "$REPO_IMMUTABLE_RELEASES" in
+  true | false) ;;
+  *)
+    echo "error: REPO_IMMUTABLE_RELEASES must be true or false, got '$REPO_IMMUTABLE_RELEASES'" >&2
     exit 1
     ;;
 esac
@@ -204,6 +213,34 @@ else
        conditions: { ref_name: { include: $tags, exclude: [] } },
        rules: [ { type: "update" }, { type: "deletion" } ],
        bypass_actors: [] }')"
+fi
+
+# Immutable releases: once a release is published, its assets and its tag are
+# frozen. Title and notes stay editable. Never switched off from here: an
+# organization may enforce it, and switching it off is not a routine change.
+if [ "$REPO_IMMUTABLE_RELEASES" = "false" ]; then
+  echo "  Immutable releases left as they are (REPO_IMMUTABLE_RELEASES=false)"
+else
+  echo "  Enabling immutable releases..."
+  # GitHub answers 404 while the setting is off. Any other failure stops the
+  # run instead of being read as "off".
+  if state=$("$GH" api "repos/$REPO/immutable-releases" 2>&1); then
+    immutable=$(echo "$state" | "$JQ" -r .enabled)
+  elif grep -q "HTTP 404" <<< "$state"; then
+    immutable=false
+  else
+    echo "error: reading the immutable releases setting failed: $state" >&2
+    exit 1
+  fi
+  if [ "$immutable" = "true" ]; then
+    echo "    Already enabled"
+  else
+    out=$("$GH" api "repos/$REPO/immutable-releases" -X PUT 2>&1) || {
+      echo "error: enabling immutable releases failed: $out" >&2
+      exit 1
+    }
+    echo "    Enabled"
+  fi
 fi
 
 echo "  Configuring merge commit settings..."

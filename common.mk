@@ -72,6 +72,8 @@ SETUP_ENVTEST ?= $(LOCALGOBIN)/setup-envtest
 # REPO_RELEASE_TAGS is a JSON array of tag patterns (default '["v*"]'; short names are normalized
 # to refs/tags/...) that nobody, workflows and admins included, may move or delete; '[]' skips
 # that ruleset. REPO_RELEASE_TAGS_ENFORCEMENT is active, evaluate (report only) or disabled.
+# REPO_IMMUTABLE_RELEASES enables immutable releases (assets and tag of a published release are
+# frozen, notes stay editable); `false` leaves the repository's setting as it is.
 # Booleans must be `true` or `false`. Example:
 #   make repo-settings REPO_ADMIN_BYPASS=false REPO_STATUS_CHECKS='["CI","action-pins / Check action pins"]' REPO_RULESET_BRANCHES='["release/*"]'
 REPO_ADMIN_BYPASS ?= true
@@ -86,6 +88,7 @@ REPO_ALLOW_REBASE_MERGE ?= false
 REPO_REQUIRE_LAST_PUSH_APPROVAL ?= false
 REPO_RELEASE_TAGS ?= ["v*"]
 REPO_RELEASE_TAGS_ENFORCEMENT ?= active
+REPO_IMMUTABLE_RELEASES ?= true
 
 .PHONY: repo-settings
 repo-settings: ## Reconcile GitHub repository settings (labels, merge strategy, branch and tag protection, security)
@@ -95,6 +98,7 @@ repo-settings: ## Reconcile GitHub repository settings (labels, merge strategy, 
 		REPO_ALLOW_MERGE_COMMIT='$(REPO_ALLOW_MERGE_COMMIT)' \
 		REPO_ALLOW_REBASE_MERGE='$(REPO_ALLOW_REBASE_MERGE)' \
 		REPO_ALLOW_SQUASH_MERGE='$(REPO_ALLOW_SQUASH_MERGE)' \
+		REPO_IMMUTABLE_RELEASES='$(REPO_IMMUTABLE_RELEASES)' \
 		REPO_REQUIRE_BRANCH_UP_TO_DATE='$(REPO_REQUIRE_BRANCH_UP_TO_DATE)' \
 		REPO_REQUIRE_CODE_OWNER_REVIEW='$(REPO_REQUIRE_CODE_OWNER_REVIEW)' \
 		REPO_REQUIRED_APPROVING_REVIEW_COUNT='$(REPO_REQUIRED_APPROVING_REVIEW_COUNT)' \
