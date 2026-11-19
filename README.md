@@ -280,6 +280,7 @@ It configures:
 - **Secret scanning** — enabled
 - **Branch protection** — a "protect-main" ruleset on the default branch (and any `REPO_RULESET_BRANCHES` patterns): requires PRs with 1 approval, dismisses stale reviews, requires review thread resolution, enforces commit signatures, requires approval of the latest push when `REPO_REQUIRE_LAST_PUSH_APPROVAL` is `true`, prevents direct pushes/deletions/non-fast-forwards
 - **Release tags** — the "protect-release-tags" ruleset refuses moving or deleting tags matching `REPO_RELEASE_TAGS` (`v*` by default), for workflows and repository admins too. Creating tags stays open, so releases keep tagging. There is deliberately no admin bypass: a botched release is fixed with the next patch, not by retagging.
+- **Immutable releases** — enabled unless `REPO_IMMUTABLE_RELEASES` is `false`: once a release is published, its assets and its tag are frozen, while title and notes stay editable. It applies to releases published from then on. `repo-settings` never switches it off.
 
 The repository settings are configurable via make variables (set them in your `Makefile` or pass them on the command line, e.g. `make repo-settings REPO_STATUS_CHECKS='["CI","lint"]' REPO_RULESET_BRANCHES='["release/*"]'`):
 
@@ -297,6 +298,7 @@ The repository settings are configurable via make variables (set them in your `M
 | `REPO_RULESET_BRANCHES`                | `[]`     | JSON array of additional branch patterns protect-main applies to (e.g. `["release/*"]`); short names are normalized to `refs/heads/...`; the default branch is always protected                                                         |
 | `REPO_RELEASE_TAGS`                    | `["v*"]` | JSON array of tag patterns nobody may move or delete; short names are normalized to `refs/tags/...`; `[]` skips protect-release-tags                                                                                                    |
 | `REPO_RELEASE_TAGS_ENFORCEMENT`        | `active` | Enforcement of the protect-release-tags ruleset: `active`, `evaluate` (report only) or `disabled`                                                                                                                                       |
+| `REPO_IMMUTABLE_RELEASES`              | `true`   | Enable immutable releases; `false` leaves the repository's setting as it is                                                                                                                                                             |
 
 ### GitHub Actions
 
