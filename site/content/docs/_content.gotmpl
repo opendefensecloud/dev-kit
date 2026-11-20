@@ -1,0 +1,19 @@
+{{- /* One page per ../docs/*.md (mounted into assets/docs). The first "# "
+heading becomes the title and is dropped from the body, since the theme
+renders the title itself. Pages missing from $order sort last. */ -}}
+{{- $order := slice "NEW_REPO" "MAKE" "FORMATTING" "VERSION_PINS" "DEV_SHELL" "REPO_SETTINGS" "GITHUB_ACTIONS" "RELEASES" "DESIGN_DECISIONS" "CONTRIBUTING" -}}
+{{- range resources.Match "docs/*.md" -}}
+  {{- $name := path.BaseName .Name -}}
+  {{- $weight := 100 -}}
+  {{- range $i, $o := $order -}}
+    {{- if eq $o $name -}}{{- $weight = add $i 1 -}}{{- end -}}
+  {{- end -}}
+  {{- $title := $name -}}
+  {{- with findRESubmatch `(?m)^# (.+)$` .Content 1 -}}{{- $title = index . 0 1 -}}{{- end -}}
+  {{- $.AddPage (dict
+    "path" (lower $name)
+    "title" $title
+    "weight" $weight
+    "content" (dict "mediaType" "text/markdown" "value" (replaceRE `\A# .+\n+` "" .Content 1))
+  ) -}}
+{{- end -}}
