@@ -114,7 +114,7 @@ echo "  Configuring merge strategy..."
   -f allow_squash_merge="$REPO_ALLOW_SQUASH_MERGE" \
   -f allow_rebase_merge="$REPO_ALLOW_REBASE_MERGE" \
   -f delete_branch_on_merge=true \
-  -f allow_auto_merge=true > /dev/null
+  -f allow_auto_merge=false > /dev/null
 
 echo "  Enabling secret scanning..."
 "$GH" api "repos/$REPO" -X PATCH \

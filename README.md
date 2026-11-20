@@ -276,7 +276,7 @@ Run `make repo-settings` to reconcile your GitHub repository with the organizati
 It configures:
 
 - **Labels** — creates/updates the standard set of issue and PR labels
-- **Merge strategy** — merge commits only by default, configurable via `REPO_ALLOW_MERGE_COMMIT`, `REPO_ALLOW_SQUASH_MERGE`, `REPO_ALLOW_REBASE_MERGE` (these also restrict protect-main's allowed merge methods; at least one must be enabled or `repo-settings` fails); auto-merge enabled, delete branch on merge
+- **Merge strategy** — merge commits only by default, configurable via `REPO_ALLOW_MERGE_COMMIT`, `REPO_ALLOW_SQUASH_MERGE`, `REPO_ALLOW_REBASE_MERGE` (these also restrict protect-main's allowed merge methods; at least one must be enabled or `repo-settings` fails); auto-merge disabled, delete branch on merge
 - **Secret scanning** — enabled
 - **Branch protection** — a "protect-main" ruleset on the default branch (and any `REPO_RULESET_BRANCHES` patterns): requires PRs with 1 approval, dismisses stale reviews, requires review thread resolution, enforces commit signatures, requires approval of the latest push when `REPO_REQUIRE_LAST_PUSH_APPROVAL` is `true`, prevents direct pushes/deletions/non-fast-forwards
 - **Release tags** — the "protect-release-tags" ruleset refuses moving or deleting tags matching `REPO_RELEASE_TAGS` (`v*` by default), for workflows and repository admins too. Creating tags stays open, so releases keep tagging. There is deliberately no admin bypass: a botched release is fixed with the next patch, not by retagging.
@@ -346,15 +346,14 @@ keeps one small stub per workflow, which sets the triggers and the permissions
 and calls dev-kit. Pin each stub to a SHA like any other action; Renovate bumps
 them together with `DEV_KIT_VERSION`.
 
-| Workflow                    | Stub triggers                                                      | Needs                           |
-| --------------------------- | ------------------------------------------------------------------ | ------------------------------- |
-| `action-pins.yml`           | `pull_request`, `workflow_dispatch`                                |                                 |
-| `conventional-commits.yml`  | `pull_request` (opened, edited, synchronize, reopened)             | `.commitlintrc.yml` in the repo |
-| `osv-scanner.yml`           | `pull_request`, `push` to main, weekly                             | optional `scan-args` input      |
-| `issues-add-labels.yaml`    | `issues` (opened, reopened)                                        |                                 |
-| `issues-add-to-project.yml` | `issues`, `pull_request` (opened)                                  | `ADD_TO_PROJECT_PAT` secret     |
-| `renovate-auto-approve.yml` | `pull_request` (opened, reopened, synchronize, labeled, unlabeled) | see the header of the workflow  |
-| `renovate-dev-kit-lock.yml` | `pull_request` (opened, synchronize, reopened)                     | `DEV_KIT_BOT_APP_*` org secrets |
+| Workflow                    | Stub triggers                                          | Needs                           |
+| --------------------------- | ------------------------------------------------------ | ------------------------------- |
+| `action-pins.yml`           | `pull_request`, `workflow_dispatch`                    |                                 |
+| `conventional-commits.yml`  | `pull_request` (opened, edited, synchronize, reopened) | `.commitlintrc.yml` in the repo |
+| `osv-scanner.yml`           | `pull_request`, `push` to main, weekly                 | optional `scan-args` input      |
+| `issues-add-labels.yaml`    | `issues` (opened, reopened)                            |                                 |
+| `issues-add-to-project.yml` | `issues`, `pull_request` (opened)                      | `ADD_TO_PROJECT_PAT` secret     |
+| `renovate-dev-kit-lock.yml` | `pull_request` (opened, synchronize, reopened)         | `DEV_KIT_BOT_APP_*` org secrets |
 
 No stub triggers on `merge_group`, as no repo uses a merge queue. A repo that
 turns one on must add the trigger to every stub whose check it requires, and
