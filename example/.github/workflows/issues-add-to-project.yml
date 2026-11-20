@@ -1,0 +1,16 @@
+# Adds new issues and PRs to the org project board. Needs the
+# ADD_TO_PROJECT_PAT secret. See docs/GITHUB_ACTIONS.md.
+name: Add issues to project
+on:
+  issues:
+    types: [opened]
+  pull_request:
+    types: [opened]
+permissions:
+  contents: read
+jobs:
+  add-to-project:
+    permissions: {}
+    uses: opendefensecloud/dev-kit/.github/workflows/issues-add-to-project.yml@<40-char-sha> # <tag>
+    secrets:
+      ADD_TO_PROJECT_PAT: ${{ secrets.ADD_TO_PROJECT_PAT }}

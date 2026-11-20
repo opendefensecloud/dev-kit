@@ -4,7 +4,7 @@
 # dev-kit dogfoods this check: CI runs it against this repository own workflows.
 # But the interesting cases are the broken ones, which must not be committed.
 # So each case builds a miniature repo in a temp directory: one called workflow,
-# one caller, and the README stub a consumer would copy.
+# one caller, and the stub a consumer would copy from example/ or the docs.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -39,7 +39,7 @@ run_test() {
 }
 
 reset() {
-  rm -rf .github README.md
+  rm -rf .github README.md docs example
   mkdir -p .github/workflows
 }
 
@@ -87,6 +87,15 @@ local_caller() {
     emit_perms "    " "$2"
     echo "    uses: ./.github/workflows/callee.yml"
   } > .github/workflows/local-caller.yml
+}
+
+# example_stub <workflow-permissions> <job-permissions>
+# The stub file a consumer copies from example/.github/workflows/.
+example_stub() {
+  mkdir -p example/.github/workflows
+  readme_stub "$1" "$2"
+  sed -e '1,3d' -e '$d' README.md > example/.github/workflows/consumer.yml
+  rm README.md
 }
 
 # readme_stub <workflow-permissions> <job-permissions>
@@ -187,12 +196,25 @@ run_test "both callers correct" 0 "ok    callee.yml"
 
 reset
 callee "contents: read" "-"
+local_caller "contents: read" "contents: read"
+example_stub "contents: read" "issues: write"
+run_test "a broken example stub fails even when the in-repo caller is fine" 1 "example/.github/workflows/consumer.yml (stub) (consume)"
+
+reset
+callee "contents: read" "-"
+local_caller "contents: read" "contents: read"
+readme_stub "contents: read" "issues: write"
+mkdir docs && mv README.md docs/GUIDE.md
+run_test "a broken stub in docs/ fails too" 1 "docs/GUIDE.md (stub) (consume)"
+
+reset
+callee "contents: read" "-"
 local_caller "-" "-"
 run_test "caller declaring nothing anywhere warns instead of failing" 0 "WARN  callee.yml"
 
 reset
 callee "contents: read" "-"
-run_test "a reusable workflow nobody calls warns" 0 "nothing calls it in this repo or the README"
+run_test "a reusable workflow nobody calls warns" 0 "nothing calls it in this repo, example/ or the docs"
 
 # Another repository's workflow can share a filename with ours; its grant must
 # not be compared against our callee.

@@ -9,7 +9,7 @@ common.mk:
 	curl --fail -sSL https://raw.githubusercontent.com/opendefensecloud/dev-kit/$(DEV_KIT_VERSION)/common.mk -o common.mk.download && \
 	mv common.mk.download $@
 
-# Add you own custom make targets
+# Add your own custom make targets
 my-target:
 	@echo Hello World
 

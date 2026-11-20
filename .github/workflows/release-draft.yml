@@ -3,8 +3,8 @@ name: Release draft
 # Reusable workflow, step 2 of 2: creates the draft release for a tag that
 # release.yml created in the same run, with the notes it handed over and,
 # optionally, the caller's assets. The draft only appears once it is complete
-# (but see "Known gaps" in the README). Re-running updates the same draft.
-# See "Release workflow" in the README.
+# (but see "Known gaps" in docs/RELEASES.md). Re-running updates the same draft.
+# See docs/RELEASES.md.
 
 on:
   workflow_call:

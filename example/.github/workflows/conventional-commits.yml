@@ -1,0 +1,12 @@
+# Validates PR titles and commit messages. Needs .commitlintrc.yml in the
+# repo. See docs/GITHUB_ACTIONS.md.
+name: Conventional Commits
+on:
+  pull_request:
+    branches: ["main"]
+    types: [opened, edited, synchronize, reopened]
+permissions:
+  pull-requests: read
+jobs:
+  conventional-commits:
+    uses: opendefensecloud/dev-kit/.github/workflows/conventional-commits.yml@<40-char-sha> # <tag>
