@@ -3,3 +3,8 @@ example/common.mk
 example/bin/
 .pre-commit-config.yaml
 .common.mk-configs
+
+# Hugo build output
+site/public/
+site/resources/
+.hugo_build.lock

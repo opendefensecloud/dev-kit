@@ -126,6 +126,7 @@
   } // flake-utils.lib.eachDefaultSystem (system: {
     devShells.default = self.lib.mkShell {
       inherit system;
+      packages = with nixpkgs.legacyPackages.${system}; [ hugo go ];
       preCommitHooks = {
         osv-scanner.enable = false;
         commitlint.enable = true;
