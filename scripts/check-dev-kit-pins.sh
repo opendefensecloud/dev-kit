@@ -64,7 +64,7 @@ checked=()
 
 if [ -d "$WORKFLOWS" ]; then
   # Only `uses:` lines, and only where no `#` precedes `uses:` — a commented-out
-  # reference is documentation, which is how the README stubs are written.
+  # reference is documentation, which is how documentation stubs are written.
   mapfile -t lines < <(
     grep -rnE "^[^#]*uses:[[:space:]]*opendefensecloud/dev-kit/" "$WORKFLOWS" || true
   )

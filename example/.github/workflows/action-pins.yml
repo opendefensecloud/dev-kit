@@ -1,0 +1,11 @@
+# Fails a PR on unpinned or moved action pins. Require both checks it
+# reports. See docs/GITHUB_ACTIONS.md.
+name: Action Pins
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  action-pins:
+    uses: opendefensecloud/dev-kit/.github/workflows/action-pins.yml@<40-char-sha> # <tag>

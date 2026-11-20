@@ -7,8 +7,8 @@ name: Release
 # Publishing the draft triggers repo-specific delivery (Docker, Helm, docs).
 #
 # The caller's stub carries the triggers (workflow_dispatch, optionally push
-# to the default branch, which should run as a dry run). See "Release
-# workflow" in the README.
+# to the default branch, which should run as a dry run). See
+# docs/RELEASES.md.
 
 on:
   workflow_call:

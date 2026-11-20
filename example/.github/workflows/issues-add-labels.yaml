@@ -1,0 +1,12 @@
+# Adds the needs-triage label to new issues. See docs/GITHUB_ACTIONS.md.
+name: Label issues
+on:
+  issues:
+    types: [opened, reopened]
+permissions:
+  contents: read
+jobs:
+  label:
+    permissions:
+      issues: write
+    uses: opendefensecloud/dev-kit/.github/workflows/issues-add-labels.yaml@<40-char-sha> # <tag>

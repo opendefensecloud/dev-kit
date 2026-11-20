@@ -3,10 +3,11 @@ name: Test Actions
 # Consuming repositories pin this repo by SHA, so anything shipped from here
 # reaches their CI unchanged. The triggers therefore cover what is shipped —
 # the composite actions and their pins, common.mk, the scripts, the flake, the
-# reusable workflows, the shared cliff.toml, and the README caller stubs
-# consumers copy — not just the shell scripts. A pin bump in an action.yml used
-# to change what every consumer runs without a single job executing here, and a
-# permissions change in a reusable workflow can break every caller at startup.
+# reusable workflows, the shared cliff.toml, and the caller stubs in example/
+# and docs/ that consumers copy — not just the shell scripts. A pin bump in an
+# action.yml used to change what every consumer runs without a single job
+# executing here, and a permissions change in a reusable workflow can break
+# every caller at startup.
 on:
   pull_request:
     paths:
@@ -14,6 +15,8 @@ on:
       - '.github/workflows/**'
       - 'cliff.toml'
       - 'README.md'
+      - 'docs/**'
+      - 'example/.github/workflows/**'
       - 'common.mk'
       - 'flake.lock'
       - 'flake.nix'
@@ -25,6 +28,8 @@ on:
       - '.github/workflows/**'
       - 'cliff.toml'
       - 'README.md'
+      - 'docs/**'
+      - 'example/.github/workflows/**'
       - 'common.mk'
       - 'flake.lock'
       - 'flake.nix'
@@ -88,7 +93,7 @@ jobs:
       - name: Test check-reusable-permissions.sh
         run: nix develop --command scripts/test-check-reusable-permissions.sh
       # Dogfood: the same rule against this repository's own reusable workflows,
-      # its in-repo callers, and the stubs in the README that consumers copy.
+      # its in-repo callers, and the stubs in example/ and docs/ that consumers copy.
       - name: This repository's own workflow permissions agree with its callers
         run: nix develop --command scripts/check-reusable-permissions.sh
   test-setup-nix:

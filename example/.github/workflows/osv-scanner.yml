@@ -1,0 +1,25 @@
+# Scans dependencies for known vulnerabilities on PRs, pushes to main and
+# weekly. See docs/GITHUB_ACTIONS.md.
+name: OSV-Scanner
+on:
+  pull_request:
+    branches: ["main"]
+  schedule:
+    - cron: "12 12 * * 1"
+  push:
+    branches: ["main"]
+permissions:
+  contents: read
+jobs:
+  osv-scanner:
+    permissions:
+      actions: read
+      security-events: write
+      contents: read
+    uses: opendefensecloud/dev-kit/.github/workflows/osv-scanner.yml@<40-char-sha> # <tag>
+    # with:
+    #   scan-args: |-
+    #     --include-git-root
+    #     --config ./.osv-scanner.toml
+    #     -r
+    #     ./
