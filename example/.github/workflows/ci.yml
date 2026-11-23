@@ -21,4 +21,5 @@ jobs:
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
           cachix-signing-key: ${{ secrets.CACHIX_SIGNING_KEY }}
+      # common.mk has no `test` target: define one in your Makefile.
       - run: make test

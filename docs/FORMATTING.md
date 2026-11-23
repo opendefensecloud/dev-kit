@@ -40,7 +40,13 @@ alternate spelling counts as an override (`.golangci.yaml`, `.treefmt.toml`).
 Ignore the bootstrapped files as in [`example/.gitignore`](../example/.gitignore).
 `.common.mk-configs` records what was
 fetched so that a `DEV_KIT_VERSION` bump only ever removes files this mechanism
-created, never a hand-written override that is not committed yet.
+created, never a hand-written override that is not committed yet. A fetched file
+you edit in place is still on that list, so the next bump deletes your edits:
+commit the file before you edit it, and from then on it is yours.
+
+The refresh is skipped entirely when `common.mk` itself is tracked by git (dev-kit
+itself, or a consumer that commits a pinned copy). Changing `DEV_KIT_VERSION`
+then leaves the fetched configs alone; delete them by hand to refetch.
 
 Refresh happens when the `DEV_KIT_VERSION` string changes. With a moving ref
 (`main`) the configs are therefore fetched once and not refreshed again, while

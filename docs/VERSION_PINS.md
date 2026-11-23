@@ -18,7 +18,9 @@ to register it. Override `GO_MOD`, `FLAKE_NIX` or `DOCKERFILE` (a space-separate
 list) for a non-default layout.
 
 A file that exists but whose pin cannot be parsed is an error, never a skip —
-silently ignoring it is the same drift the check exists to catch.
+silently ignoring it is the same drift the check exists to catch. The one
+exception is a `flake.nix` with no `goVersion` assignment at all: that shell does
+not pin Go, so the file is skipped.
 
 The Docker tag must be **patch-level** (`1.27.0`, not `1.27`). A minor-level tag
 never compares equal to the other two, and Renovate cannot fold it into the same

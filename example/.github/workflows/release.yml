@@ -47,7 +47,8 @@ jobs:
       dry_run: ${{ github.event_name != 'workflow_dispatch' || inputs.dry_run }}
       force: ${{ github.event_name == 'workflow_dispatch' && inputs.force }}
       # Checks that must have passed on the released commit, e.g. your e2e job.
-      required_checks: '["test-e2e / test-e2e"]'
+      # The names of the required checks must match the job names in your CI workflow.
+      required_checks: '["build"]'
 
   draft:
     needs: release

@@ -5,23 +5,23 @@ Run `make update-common-mk-bootstrap` to migrate an older `common.mk:` rule to t
 
 The included `common.mk` provides:
 
-| Target                      | Description                                                                                  |
-| --------------------------- | -------------------------------------------------------------------------------------------- |
-| `help`                      | Display all available targets                                                                |
-| `clean`                     | Remove the `bin/` directory                                                                  |
-| `fmt`                       | Format every file in the repository                                                          |
-| `lint`                      | Check formatting, then run shellcheck and, when the repository has a `go.mod`, golangci-lint |
-| `fmt-all`                   | Formatting only (what `fmt` calls)                                                           |
-| `lint-all`                  | Fail if any file is not formatted (what `lint` calls)                                        |
-| `mod`                       | Run `go mod tidy`, `download`, and `verify`                                                  |
-| `golangci-lint`             | Run golangci-lint                                                                            |
-| `shellcheck`                | Run shellcheck on shell scripts                                                              |
-| `scan`                      | Scan for vulnerabilities using osv-scanner                                                   |
-| `setup-local-cluster`       | Create a Kind cluster for local development                                                  |
-| `repo-settings`             | Reconcile GitHub repository settings                                                         |
-| `envtest-binaries-sideload` | Populate the envtest cache from upstream K8s/etcd releases                                   |
-| `check-go-version`          | Assert every Go version pin in the repository agrees                                         |
-| `check-dev-kit-pins`        | Assert every dev-kit reference names the same release                                        |
+| Target                      | Description                                                                                                         |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `help`                      | Display all available targets                                                                                       |
+| `clean`                     | Remove the `bin/` directory                                                                                         |
+| `fmt`                       | Run `fmt-all` when `DEV_KIT_FORMATTING=on`, otherwise only the project's own `fmt` prerequisites                    |
+| `lint`                      | Run `lint-all` when `DEV_KIT_FORMATTING=on`, then shellcheck and, when the repository has a `go.mod`, golangci-lint |
+| `fmt-all`                   | Formatting only (what `fmt` calls)                                                                                  |
+| `lint-all`                  | Fail if any file is not formatted (what `lint` calls)                                                               |
+| `mod`                       | Run `go mod tidy`, `download`, and `verify`                                                                         |
+| `golangci-lint`             | Run golangci-lint                                                                                                   |
+| `shellcheck`                | Run shellcheck on shell scripts                                                                                     |
+| `scan`                      | Scan for vulnerabilities using osv-scanner                                                                          |
+| `setup-local-cluster`       | Create a Kind cluster for local development                                                                         |
+| `repo-settings`             | Reconcile GitHub repository settings                                                                                |
+| `envtest-binaries-sideload` | Populate the envtest cache from upstream K8s/etcd releases                                                          |
+| `check-go-version`          | Assert every Go version pin in the repository agrees                                                                |
+| `check-dev-kit-pins`        | Assert every dev-kit reference names the same release                                                               |
 
 ## Variables
 
@@ -37,7 +37,7 @@ The included `common.mk` provides:
 | `ARCH`               | `$(shell $(GO) env GOARCH)`                | Current CPU architecture                                                                                                             |
 
 Any binary defined in your `tools.lock` is also available as a Make target
-(e.g. `make $(CONTROLLER_GEN)`). Take a look at the variables defined in
+(e.g. `make bin/go/controller-gen`, the value of `$(CONTROLLER_GEN)`). Take a look at the variables defined in
 common.mk for a list of pre-defined binary paths.
 
 ## Extending
