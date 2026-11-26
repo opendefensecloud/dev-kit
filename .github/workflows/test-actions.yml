@@ -71,7 +71,7 @@ jobs:
         run: scripts/test-repo-settings.sh
       # The same git-cliff release.yml installs: the test runs its steps.
       - name: Install git-cliff
-        uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
+        uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
         with:
           tool: git-cliff@2.13.1
       - name: Test the release workflow steps

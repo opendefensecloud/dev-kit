@@ -5,7 +5,7 @@ Run `make repo-settings` to reconcile your GitHub repository with the organizati
 It configures:
 
 - **Labels** — creates/updates the standard set of issue and PR labels
-- **Merge strategy** — merge commits only by default, configurable via `REPO_ALLOW_MERGE_COMMIT`, `REPO_ALLOW_SQUASH_MERGE`, `REPO_ALLOW_REBASE_MERGE` (these also restrict protect-main's allowed merge methods; at least one must be enabled or `repo-settings` fails); auto-merge enabled, delete branch on merge
+- **Merge strategy** — merge commits only by default, configurable via `REPO_ALLOW_MERGE_COMMIT`, `REPO_ALLOW_SQUASH_MERGE`, `REPO_ALLOW_REBASE_MERGE` (these also restrict protect-main's allowed merge methods; at least one must be enabled or `repo-settings` fails); auto-merge disabled, delete branch on merge
 - **Secret scanning** — enabled
 - **Branch protection** — a "protect-main" ruleset on the default branch (and any `REPO_RULESET_BRANCHES` patterns): requires PRs with 1 approval, dismisses stale reviews, requires review thread resolution, enforces commit signatures, requires approval of the latest push when `REPO_REQUIRE_LAST_PUSH_APPROVAL` is `true`, prevents direct pushes/deletions/non-fast-forwards
 - **Release tags** — the "protect-release-tags" ruleset refuses moving or deleting tags matching `REPO_RELEASE_TAGS` (`v*` by default), for workflows and repository admins too. Creating tags stays open, so releases keep tagging. There is deliberately no admin bypass: a botched release is fixed with the next patch, not by retagging.
