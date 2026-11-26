@@ -56,11 +56,12 @@ Comparing the lock against the workflow pins turns that into a failed check.
 
 A reference that is not `@<sha> # vX.Y.Z` fails the check rather than being
 skipped: one the comparison cannot read is how drift gets in unseen, and a
-tag-pinned reference is mutable besides. Commented-out references are ignored, so
-the stubs in `example/` can be pasted as they are.
+tag-pinned reference is mutable besides. Commented-out references are ignored.
+The stubs in `example/` carry `@<40-char-sha> # <tag>` placeholders, so the check
+fails until each one is replaced with a real pin.
 
 This detects drift between the pins. On dev-kit, the `protect-release-tags`
-ruleset (below) refuses moving or deleting a `v*` tag, so a pinned release tag
+ruleset ([Repository settings](REPO_SETTINGS.md)) refuses moving or deleting a `v*` tag, so a pinned release tag
 does not change under you: a fix ships as a new release. The ruleset itself can
 still be changed by an org owner, and a `DEV_KIT_VERSION` of `main` is not a tag
 at all.

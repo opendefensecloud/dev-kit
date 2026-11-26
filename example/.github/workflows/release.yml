@@ -47,7 +47,8 @@ jobs:
       dry_run: ${{ github.event_name != 'workflow_dispatch' || inputs.dry_run }}
       force: ${{ github.event_name == 'workflow_dispatch' && inputs.force }}
       # Checks that must have passed on the released commit, e.g. your e2e job.
-      # The names of the required checks must match the job names in your CI workflow.
+      # The names of the required checks must match the check-run names shown on the commit.
+      # A job that calls a reusable workflow has the check-run name "<caller job> / <job>", e.g. "test-e2e / test-e2e".
       required_checks: '["build"]'
 
   draft:

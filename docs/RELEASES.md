@@ -46,12 +46,12 @@ Add a build job between the two calls. It checks out the tagged commit, builds, 
       id-token: write # keyless signing
       attestations: write # build provenance
     steps:
-      - uses: actions/checkout@<40-char-sha> # v7
+      - uses: actions/checkout@<40-char-sha> # v7.0.1
         with:
           ref: ${{ needs.release.outputs.sha }}
           persist-credentials: false
       # ... build, sign, attest into dist/ ...
-      - uses: actions/upload-artifact@<40-char-sha> # v7
+      - uses: actions/upload-artifact@<40-char-sha> # v7.0.2
         with:
           name: release-assets
           path: dist/

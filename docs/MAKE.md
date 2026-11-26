@@ -37,7 +37,7 @@ The included `common.mk` provides:
 | `ARCH`               | `$(shell $(GO) env GOARCH)`                | Current CPU architecture                                                                                                             |
 
 Any binary defined in your `tools.lock` is also available as a Make target
-(e.g. `make bin/go/controller-gen`, the value of `$(CONTROLLER_GEN)`). Take a look at the variables defined in
+(e.g. `make "$(pwd)/bin/go/controller-gen"`, the value of `$(CONTROLLER_GEN)`). Take a look at the variables defined in
 common.mk for a list of pre-defined binary paths.
 
 ## Extending
