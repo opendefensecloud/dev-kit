@@ -1,0 +1,7 @@
+# Fetched from dev-kit by common.mk. Commit your own copy of a config to override it.
+common.mk
+.common.mk-*
+.editorconfig
+.golangci.yml
+treefmt.toml
+bin/

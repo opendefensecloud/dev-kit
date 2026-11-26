@@ -7,7 +7,7 @@ name: renovate-dev-kit-lock
 # a newer go-overlay). scripts/renovate-relock.sh does the relocking, fetched
 # from the dev-kit commit this workflow was called at; it is a no-op once the
 # lock is current, so a re-run after its own commit changes nothing. See
-# "Governance workflows" in the README for the stub.
+# example/.github/workflows/ for the stub.
 #
 # Commits through the GitHub App's installation token, via the API: GitHub
 # signs the commit (required_signatures), and unlike GITHUB_TOKEN it starts CI

@@ -1,0 +1,15 @@
+# Relocks flake.lock on Renovate's dev-kit and Go version PRs. Needs the
+# DEV_KIT_BOT_APP_* org secrets. See docs/GITHUB_ACTIONS.md.
+name: Relock dev-kit
+on:
+  pull_request:
+    branches: ["main"]
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+jobs:
+  relock:
+    uses: opendefensecloud/dev-kit/.github/workflows/renovate-dev-kit-lock.yml@<40-char-sha> # <tag>
+    secrets:
+      DEV_KIT_BOT_APP_CLIENT_ID: ${{ secrets.DEV_KIT_BOT_APP_CLIENT_ID }}
+      DEV_KIT_BOT_APP_PRIVATE_KEY: ${{ secrets.DEV_KIT_BOT_APP_PRIVATE_KEY }}

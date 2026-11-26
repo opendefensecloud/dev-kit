@@ -41,7 +41,7 @@ The branch protection ruleset is configurable via make variables, e.g.:
 make repo-settings REPO_STATUS_CHECKS='["CI","lint"]' REPO_REQUIRE_BRANCH_UP_TO_DATE=true REPO_RULESET_BRANCHES='["release/*"]'
 ```
 
-See the README for the full list of `REPO_*` variables.
+See [REPO_SETTINGS.md](REPO_SETTINGS.md) for the full list of `REPO_*` variables.
 
 ## 4. Set up GitHub organization secrets
 
@@ -59,45 +59,21 @@ If your project uses private runners, whitelist the repository in the runner gro
 
 ## 5. Copy GitHub workflows
 
-Add the relevant workflows from `.github/workflows/` in this repository. For a
-reusable one, add its stub from "Governance workflows" in the README instead of
-a copy: a copy reports its checks under other names than the ones the README
-says to require.
-
-| Workflow                    | Purpose                                                                                                                                                                                           |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `conventional-commits.yml`  | Validates PR titles and commit messages against Conventional Commits                                                                                                                              |
-| `issues-add-labels.yaml`    | Automatically adds `needs-triage` label to new issues                                                                                                                                             |
-| `issues-add-to-project.yml` | Adds new issues and PRs to the org project board                                                                                                                                                  |
-| `release-drafter.yaml`      | Drafts release notes from merged PRs                                                                                                                                                              |
-| `action-pins.yml`           | Fails the PR if any action is not pinned to a SHA with a version comment, a pin's SHA changes under the same version, or a pin it changes is an impostor commit or mismatches its version comment |
-
-If using release-drafter, also copy `.github/release-drafter.yml` (the config file).
+Copy the stubs you need from [`example/.github/workflows/`](../example/.github/workflows/) and pin each `uses:` to a real SHA.
+The stubs call dev-kit's reusable workflows, so their checks report under the names
+[GitHub Actions](GITHUB_ACTIONS.md#governance-workflows) says to require. Do not copy dev-kit's own `.github/workflows/` files.
 
 ### Nix-based CI
 
 Jobs that run inside the dev shell should use the shared `setup-nix` composite action
 rather than installing Nix themselves. It installs Nix and enables the org Cachix cache in
-two steps; secrets are not visible inside a composite action, so the caller passes them:
-
-```yaml
-    defaults:
-      run:
-        shell: nix develop --command bash -e {0}
-    steps:
-      - uses: actions/checkout@<40-char-sha> # v7
-      - name: Set up nix
-        uses: opendefensecloud/dev-kit/.github/actions/setup-nix@<40-char-sha> # <tag>
-        with:
-          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          cachix-signing-key: ${{ secrets.CACHIX_SIGNING_KEY }}
-      - run: make test
-```
+two steps. Secrets are not visible inside a composite action, so the caller passes them, as in
+[`example/.github/workflows/ci.yml`](../example/.github/workflows/ci.yml).
 
 Both Cachix secrets are org-level (see step 4). On fork pull requests they are unavailable
 and cachix-action falls back to a read-only cache, which is the intended behaviour.
 
-If using commitlint (recommended), copy `.commitlintrc.yml` to your project root and enable the hook in `flake.nix`:
+If using commitlint (recommended), copy [`example/.commitlintrc.yml`](../example/.commitlintrc.yml) to your project root and enable the hook in `flake.nix`:
 
 ```nix
 preCommitHooks = {

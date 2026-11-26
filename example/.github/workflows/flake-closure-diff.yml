@@ -1,0 +1,14 @@
+# Posts the package-level difference of a flake.lock bump to the job summary.
+# Advisory only. See docs/VERSION_PINS.md.
+name: Flake closure diff
+on:
+  pull_request:
+    paths: ["flake.lock", "flake.nix"]
+permissions:
+  contents: read
+jobs:
+  closure-diff:
+    uses: opendefensecloud/dev-kit/.github/workflows/flake-closure-diff.yml@<40-char-sha> # <tag>
+    secrets:
+      cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      cachix-signing-key: ${{ secrets.CACHIX_SIGNING_KEY }}

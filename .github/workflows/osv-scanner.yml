@@ -2,7 +2,7 @@ name: OSV-Scanner
 
 # Reusable only. The caller's stub carries the triggers (pull_request, push to
 # main, a weekly schedule); its event decides which job runs. See "Governance
-# workflows" in the README.
+# workflows" in docs/GITHUB_ACTIONS.md.
 #
 # No merge_group: the upstream PR scan diffs against $GITHUB_BASE_REF, which is
 # empty in a merge queue, so it would pass without comparing anything. No repo

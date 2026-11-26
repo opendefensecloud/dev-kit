@@ -1,7 +1,7 @@
 name: Action Pins
 
 # Reusable, and also run on dev-kit's own PRs. Consumers call it from a stub;
-# see "Governance workflows" in the README.
+# see "Governance workflows" in docs/GITHUB_ACTIONS.md.
 #
 # Two jobs, two checks:
 # - check-pins makes sure every action is pinned to a SHA with only its version
