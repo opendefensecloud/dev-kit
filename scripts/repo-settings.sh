@@ -91,19 +91,16 @@ while IFS=';' read -r name color desc; do
   [ -z "$name" ] && continue
   "$GH" label create "$name" --repo "$REPO" --color "$color" --description "$desc" --force 2> /dev/null
 done << 'EOF'
-bug;d73a4a;Something isn't working
 duplicate;cfd3d7;This issue or pull request already exists
 good first issue;7057ff;Good for newcomers
 help wanted;008672;Extra attention is needed
 invalid;e4e669;This doesn't seem right
 question;37326e;Further information is requested
 wontfix;ffffff;This will not be worked on
-chore;ededed;A routine task or common potentially re-occurring task
-feature;a2eeef;New feature or request
 ok-to-helm;0e8a16;PR is allowed to build an publish helm chart
 dependencies;0366d6;Pull requests that update a dependency file
 needs-triage;eab668;Issue that has not been reviewed
-needs-update;f9a03f;Issue that is outdated or incomplete and needs an update
+needs-renewable;f9a03f;Issue is outdated and needs to be renewed
 ok-to-image;0e8a16;PR is allowed to run container build
 ok-to-test;0e8a16;PR is allowed to be tested
 EOF
