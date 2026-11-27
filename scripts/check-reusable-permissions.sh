@@ -16,9 +16,10 @@
 #
 # Callers come from two places and both are checked:
 #   - in-repo:   a job with `uses: ./.github/workflows/<file>`
-#   - consumers: the stubs in README.md, which is what consumers copy
+#   - consumers: the stubs in example/.github/workflows/, which is what
+#                consumers copy, and any yaml block in README.md or docs/*.md
 #
-# Checking only the README would miss an in-repo caller; checking only in-repo
+# Checking only the stubs would miss an in-repo caller; checking only in-repo
 # callers would miss every consumer. Both have bitten.
 #
 # yq is used only to turn YAML into JSON — its expression language has no
@@ -40,7 +41,7 @@ done
 cd "${1:-.}"
 
 WORKFLOW_DIR="${WORKFLOW_DIR:-.github/workflows}"
-README="${README_FILE:-README.md}"
+EXAMPLE_DIR="${EXAMPLE_DIR:-example/.github/workflows}"
 # Which qualified `uses:` paths count as this repository. A bare substring match
 # would also select another repository's workflow that happens to share a
 # filename with one of ours, and compare the wrong pair.
@@ -66,8 +67,22 @@ for f in "$WORKFLOW_DIR"/*.y*ml; do
     < "$tmp/doc.json" >> "$tmp/docs.ndjson"
 done
 
-if [ -f "$README" ]; then
-  # Split the README's fenced yaml blocks out so each can be parsed on its own.
+for f in "$EXAMPLE_DIR"/*.y*ml; do
+  [ -f "$f" ] || continue
+  if ! yq -o=json -I=0 '.' "$f" > "$tmp/doc.json" 2> "$tmp/yqerr"; then
+    echo "error: cannot parse $f as YAML:" >&2
+    sed 's/^/       /' "$tmp/yqerr" >&2
+    exit 1
+  fi
+  jq -c --arg label "$f (stub)" \
+    'select(type == "object" and has("jobs")) | {name: null, label: $label, local: false, doc: .}' \
+    < "$tmp/doc.json" >> "$tmp/docs.ndjson"
+done
+
+for README in README.md docs/*.md; do
+  [ -f "$README" ] || continue
+  rm -f "$tmp"/readme-block-*.yaml
+  # Split the fenced yaml blocks out so each can be parsed on its own.
   awk -v d="$tmp" '
     /^```yaml$/ { n++; inb = 1; next }
     /^```$/     { inb = 0; next }
@@ -76,7 +91,7 @@ if [ -f "$README" ]; then
   for b in "$tmp"/readme-block-*.yaml; do
     [ -f "$b" ] || continue
     if ! yq -o=json -I=0 '.' "$b" > "$tmp/doc.json" 2> "$tmp/yqerr"; then
-      # A README may hold illustrative fragments that do not stand alone. One
+      # A doc may hold illustrative fragments that do not stand alone. One
       # that calls our workflows may not: that is the snippet consumers copy,
       # so it has to be checkable.
       if grep -qF "$REPO_SLUG/.github/workflows/" "$b"; then
@@ -91,7 +106,7 @@ if [ -f "$README" ]; then
       'select(type == "object" and has("jobs")) | {name: null, label: $label, local: false, doc: .}' \
       < "$tmp/doc.json" >> "$tmp/docs.ndjson"
   done
-fi
+done
 
 jq -rs --arg slug "$REPO_SLUG" '
   def lvl: {"none": 1, "read": 2, "write": 3}[.] // 0;
@@ -150,7 +165,7 @@ jq -rs --arg slug "$REPO_SLUG" '
   | . as $callee
   | [ $edges[] | select(.callee == $callee.name) ] as $mine
   | if ($mine | length) == 0 then
-      "WARN|\($callee.name)|nothing calls it in this repo or the README|"
+      "WARN|\($callee.name)|nothing calls it in this repo, example/ or the docs|"
     else
       $mine[]
       | if .grant == null then
