@@ -5,4 +5,6 @@
 # Hugo build output
 site/public/
 site/resources/
+# The version dropdown, written by scripts/build-docs.sh
+site/config/_default/menus.toml
 .hugo_build.lock

@@ -1,5 +1,6 @@
 # Docs site, published to GitHub Pages by .github/workflows/docs.yml.
-# Preview locally with `hugo server -s site` (needs hugo and go on PATH).
+# Preview locally with `hugo server -s site` (needs hugo and go on PATH);
+# `bash scripts/build-docs.sh` builds every version into site/public.
 baseURL = "https://opendefensecloud.github.io/dev-kit/"
 title = "dev-kit"
 disableKinds = ["taxonomy", "term"]
@@ -14,6 +15,8 @@ disableKinds = ["taxonomy", "term"]
 [params]
   # Used by layouts/_markup/render-link.html for links to repository files.
   repo = "https://github.com/opendefensecloud/dev-kit"
+  # The ref those links point at. scripts/build-docs.sh sets it per version.
+  ref = "main"
 
 [params.navbar]
   displayTitle = true
