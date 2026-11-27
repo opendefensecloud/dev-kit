@@ -1,0 +1,16 @@
+{{- /* The docs link to each other as FOO.md and to repository files as
+../example/... so they work on GitHub. On the site, FOO.md becomes the page
+docs/foo/ and any other relative path becomes a link to the file on GitHub, at
+the ref the site was built from. */ -}}
+{{- $u := urls.Parse .Destination -}}
+{{- $href := .Destination -}}
+{{- if and (not $u.IsAbs) $u.Path -}}
+  {{- if strings.HasSuffix $u.Path ".md" -}}
+    {{- $href = printf "docs/%s/" (lower (path.BaseName $u.Path)) | relURL -}}
+    {{- with $u.Fragment -}}{{- $href = printf "%s#%s" $href . -}}{{- end -}}
+  {{- else -}}
+    {{- $href = printf "%s/blob/%s/%s" site.Params.repo site.Params.ref (path.Clean (strings.TrimPrefix "../" $u.Path)) -}}
+  {{- end -}}
+{{- end -}}
+<a href="{{ $href }}"{{ with .Title }} title="{{ . }}"{{ end }}{{ if $u.IsAbs }} target="_blank" rel="noopener"{{ end }}>{{ .Text }}</a>
+{{- /* chomp trailing newline */ -}}

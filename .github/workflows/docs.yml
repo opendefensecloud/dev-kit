@@ -1,0 +1,72 @@
+name: Docs
+
+# Builds the Hugo site in site/ from docs/, and publishes it to GitHub Pages:
+# main at the root, every published release under /versions/<tag>/ (see
+# scripts/build-docs.sh). A push to main and a published release both
+# redeploy. Pull requests and other branches only build, so a broken page
+# fails before it merges. Hugo and Go (for Hugo modules) come from the locked
+# nixpkgs in flake.lock, so Renovate's lock bumps move them too.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'site/**'
+      - 'flake.lock'
+      - 'scripts/build-docs.sh'
+      - '.github/workflows/docs.yml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'site/**'
+      - 'flake.lock'
+      - 'scripts/build-docs.sh'
+      - '.github/workflows/docs.yml'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Deploys queue one at a time; pull requests cancel their superseded runs.
+  group: ${{ github.event_name == 'pull_request' && format('pages-{0}', github.ref) || 'pages' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # A release run still builds main at the root; the release itself
+          # is one of the versions.
+          ref: ${{ github.event_name == 'release' && 'main' || '' }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install nix
+        uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
+      - name: Build
+        env:
+          GH_TOKEN: ${{ github.token }} # gh release list
+        run: nix shell --inputs-from . nixpkgs#hugo nixpkgs#go --command bash scripts/build-docs.sh
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        if: github.event_name == 'release' || github.ref == 'refs/heads/main'
+        with:
+          path: site/public
+
+  deploy:
+    # workflow_dispatch accepts any branch; only main and releases may publish.
+    if: github.event_name == 'release' || github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-26.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
